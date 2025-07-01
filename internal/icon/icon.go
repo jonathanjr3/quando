@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 )
 
-const favicon_location = "editor/favicon.ico"
+const favicon_location = "editor/icon.png"
 
 func Data() []byte {
 	bytes, err := os.ReadFile(filepath.FromSlash(favicon_location))

@@ -10,7 +10,7 @@ import (
 	"quando/internal/icon"
 	"quando/internal/server"
 
-	"github.com/getlantern/systray"
+	"fyne.io/systray"
 	"github.com/skratchdot/open-golang/open"
 	"github.com/zserge/lorca"
 )
