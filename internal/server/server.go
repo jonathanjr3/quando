@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"quando/internal/config"
+	"quando/internal/server/auth"
 	"quando/internal/server/blocks"
 	"quando/internal/server/ip"
 	"quando/internal/server/media"
@@ -27,12 +28,49 @@ func Port() string {
 	return port
 }
 
+// CORS middleware to handle cross-origin requests from mobile devices
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Allow requests from any origin when in remote mode
+		if config.Remote() {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+		} else {
+			// For local mode, allow localhost and local network
+			origin := r.Header.Get("Origin")
+			if origin != "" && (strings.Contains(origin, "localhost") || strings.Contains(origin, "127.0.0.1") || strings.Contains(origin, "192.168.") || strings.Contains(origin, "10.")) {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+			}
+		}
+
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Requested-With, Authorization")
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
+
+		// Handle preflight requests
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
 func indexOrFail(w http.ResponseWriter, req *http.Request) {
 	if req.URL.Path != "/" {
 		http.NotFound(w, req)
 		return
 	}
-	http.ServeFile(w, req, "./dashboard")
+
+	// Check if user is authenticated
+	if auth.IsAuthenticated(req) {
+		// Redirect authenticated users to admin dashboard
+		http.Redirect(w, req, "/admin", http.StatusFound)
+		return
+	}
+
+	// Redirect unauthenticated users to login
+	http.Redirect(w, req, "/login.html", http.StatusFound)
 }
 
 func favicon(w http.ResponseWriter, req *http.Request) {
@@ -62,30 +100,72 @@ func Quit() {
 
 func ServeHTTPandIO(handlers []Handler) {
 	var err error
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", indexOrFail)
-	mux.HandleFunc("/scripts", scripts.HandleDirectory)
-	mux.HandleFunc("/scripts/", scripts.HandleFile)
-	mux.HandleFunc("/blocks", blocks.Handle)
 
-	mux.HandleFunc("/media/", media.HandleMedia)
-	// N.B. the slash after the media type is added to simplify url matching
-	mux.HandleFunc("/images/", media.HandleGetMediaDirectory)
-	mux.HandleFunc("/audio/", media.HandleGetMediaDirectory)
-	mux.HandleFunc("/video/", media.HandleGetMediaDirectory)
-	mux.HandleFunc("/objects/", media.HandleGetMediaDirectory)
-	for _, handler := range handlers {
-		mux.HandleFunc(handler.Url, handler.Func)
+	// Initialize admin credentials
+	creds, err := auth.GetOrCreateAdminCredentials()
+	if err != nil {
+		fmt.Println("Failed to initialize admin credentials:", err)
+		return
 	}
+
+	mux := http.NewServeMux()
+
+	// Public routes (no authentication required)
+	mux.HandleFunc("/", indexOrFail)
+	mux.HandleFunc("/login.html", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "editor/login.html")
+	})
+	mux.HandleFunc("/api/login", auth.HandleLogin(creds))
+	mux.HandleFunc("/api/logout", auth.HandleLogout)
 	mux.HandleFunc("/favicon.ico", favicon)
 	mux.HandleFunc("/ip", ip.HandlePrivateIP)
-	// custom serving to avoid windows overriding javascript MIME type
-	mux.HandleFunc("/editor/", fileServe)
-	mux.HandleFunc("/client/", fileServe)
-	mux.HandleFunc("/common/", fileServe)
-	mux.HandleFunc("/dashboard/", fileServe)
 
-	mux.Handle("/ws/", websocket.Handler(socket.Serve))
+	// Protected admin API routes
+	mux.HandleFunc("/api/change-password", func(w http.ResponseWriter, r *http.Request) {
+		auth.AuthMiddleware(http.HandlerFunc(auth.HandleChangePassword)).ServeHTTP(w, r)
+	})
+
+	// Protected admin routes
+	mux.HandleFunc("/admin", func(w http.ResponseWriter, r *http.Request) {
+		auth.AuthMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.ServeFile(w, r, "editor/admin.html")
+		})).ServeHTTP(w, r)
+	})
+
+	// Protected API routes
+	protectedMux := http.NewServeMux()
+	protectedMux.HandleFunc("/scripts", scripts.HandleDirectory)
+	protectedMux.HandleFunc("/scripts/", scripts.HandleFile)
+	protectedMux.HandleFunc("/blocks", blocks.Handle)
+	protectedMux.HandleFunc("/media/", media.HandleMedia)
+	protectedMux.HandleFunc("/images/", media.HandleGetMediaDirectory)
+	protectedMux.HandleFunc("/audio/", media.HandleGetMediaDirectory)
+	protectedMux.HandleFunc("/video/", media.HandleGetMediaDirectory)
+	protectedMux.HandleFunc("/objects/", media.HandleGetMediaDirectory)
+
+	// Add additional handlers to protected routes
+	for _, handler := range handlers {
+		protectedMux.HandleFunc(handler.Url, handler.Func)
+	}
+
+	// Apply authentication middleware to protected routes
+	mux.Handle("/scripts", auth.AuthMiddleware(protectedMux))
+	mux.Handle("/scripts/", auth.AuthMiddleware(protectedMux))
+	mux.Handle("/blocks", auth.AuthMiddleware(protectedMux))
+	mux.Handle("/media/", auth.AuthMiddleware(protectedMux))
+	mux.Handle("/images/", auth.AuthMiddleware(protectedMux))
+	mux.Handle("/audio/", auth.AuthMiddleware(protectedMux))
+	mux.Handle("/video/", auth.AuthMiddleware(protectedMux))
+	mux.Handle("/objects/", auth.AuthMiddleware(protectedMux))
+
+	// Protected file serving
+	mux.Handle("/editor/", auth.AuthMiddleware(http.HandlerFunc(fileServe)))
+	mux.Handle("/client/", auth.AuthMiddleware(http.HandlerFunc(fileServe)))
+	mux.Handle("/common/", auth.AuthMiddleware(http.HandlerFunc(fileServe)))
+	mux.Handle("/dashboard/", auth.AuthMiddleware(http.HandlerFunc(fileServe)))
+
+	// WebSocket (protected)
+	mux.Handle("/ws/", auth.AuthMiddleware(websocket.Handler(socket.Serve)))
 
 	url := ""
 	port = ":80"
@@ -103,7 +183,11 @@ func ServeHTTPandIO(handlers []Handler) {
 		}
 	}
 	showStartup(url + port)
-	err = http.Serve(listen, mux)
+
+	// Apply CORS middleware to all requests
+	handler := corsMiddleware(mux)
+
+	err = http.Serve(listen, handler)
 	if err != nil && listen != nil {
 		fmt.Println("Exiting... ", err)
 	}

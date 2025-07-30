@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Quando - Admin Dashboard</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            margin: 0;
+            padding: 0;
+            background: #f5f7fa;
+            color: #333;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1em 2em;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .header h1 {
+            margin: 0;
+            font-weight: 300;
+        }
+        .logout-btn {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.3);
+            padding: 0.5em 1em;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background 0.3s ease;
+        }
+        .logout-btn:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2em;
+        }
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2em;
+            margin-top: 2em;
+        }
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 2em;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.07);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+        }
+        .card h3 {
+            margin-top: 0;
+            color: #667eea;
+            display: flex;
+            align-items: center;
+            gap: 0.5em;
+        }
+        .card-icon {
+            font-size: 1.5em;
+        }
+        .btn {
+            display: inline-block;
+            padding: 0.75em 1.5em;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            margin: 0.5em 0.5em 0.5em 0;
+            transition: transform 0.2s ease;
+            border: none;
+            cursor: pointer;
+            font-size: 1em;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+        .btn-secondary {
+            background: #6c757d;
+        }
+        .qr-container {
+            text-align: center;
+            margin: 1em 0;
+        }
+        .qr-code {
+            display: inline-block;
+            padding: 1em;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .welcome-card {
+            grid-column: 1 / -1;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .welcome-card h2 {
+            margin-top: 0;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 0.5em;
+        }
+        .status-online { background: #28a745; }
+        .status-offline { background: #dc3545; }
+        .info-list {
+            list-style: none;
+            padding: 0;
+        }
+        .info-list li {
+            padding: 0.5em 0;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+        }
+        .info-list li:last-child {
+            border-bottom: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🎭 Quando Admin Dashboard</h1>
+        <button class="logout-btn" onclick="logout()">Logout</button>
+    </div>
+
+    <div class="container">
+        <div class="dashboard-grid">
+            <div class="card welcome-card">
+                <h2>Welcome, Admin! 👋</h2>
+                <p>You are successfully logged into the Quando visual programming environment admin panel. From here you can manage scripts, media, and access the editor.</p>
+                <p><span class="status-indicator status-online"></span>System Status: Online</p>
+            </div>
+
+            <div class="card">
+                <h3><span class="card-icon">✏️</span>Editor Access</h3>
+                <p>Access the visual programming editor or generate QR codes for remote access.</p>
+                <a href="/editor/" class="btn" target="_blank">Open Editor</a>
+                <button class="btn btn-secondary" onclick="generateEditorQR()">Show QR Code</button>
+                <div id="editor-qrcode" class="qr-container" style="display: none;">
+                    <div class="qr-code"></div>
+                    <p>Scan to access editor from mobile device</p>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3><span class="card-icon">📁</span>Script Management</h3>
+                <p>View and manage saved scripts and projects.</p>
+                <a href="/scripts" class="btn" target="_blank">Browse Scripts</a>
+                <button class="btn btn-secondary" onclick="generateScriptsQR()">Scripts QR</button>
+                <div id="scripts-qrcode" class="qr-container" style="display: none;">
+                    <div class="qr-code"></div>
+                    <p>Scan to access scripts from mobile device</p>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3><span class="card-icon">🎨</span>Media Library</h3>
+                <p>Upload and manage images, videos, audio, and 3D objects.</p>
+                <a href="/media/" class="btn" target="_blank">Browse Media</a>
+                <button class="btn btn-secondary" onclick="generateMediaQR()">Media QR</button>
+                <div id="media-qrcode" class="qr-container" style="display: none;">
+                    <div class="qr-code"></div>
+                    <p>Scan to access media from mobile device</p>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3><span class="card-icon">�</span>Password Management</h3>
+                <p>Change your admin password for enhanced security.</p>
+                <div id="change-password-form" style="margin-top: 1em;">
+                    <div style="margin-bottom: 1em;">
+                        <input type="password" id="current-password" placeholder="Current Password" style="width: 100%; padding: 0.5em; margin-bottom: 0.5em; border: 1px solid #ddd; border-radius: 4px;">
+                        <input type="password" id="new-password" placeholder="New Password (min 8 chars)" style="width: 100%; padding: 0.5em; margin-bottom: 0.5em; border: 1px solid #ddd; border-radius: 4px;">
+                        <input type="password" id="confirm-password" placeholder="Confirm New Password" style="width: 100%; padding: 0.5em; margin-bottom: 0.5em; border: 1px solid #ddd; border-radius: 4px;">
+                    </div>
+                    <button class="btn" onclick="changePassword()">Change Password</button>
+                    <button class="btn btn-secondary" onclick="generateRandomPassword()">Generate Random</button>
+                    <div id="password-message" style="margin-top: 0.5em; color: #28a745;"></div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3><span class="card-icon">�📊</span>System Information</h3>
+                <ul class="info-list">
+                    <li><span>Server Status:</span> <span><span class="status-indicator status-online"></span>Running</span></li>
+                    <li><span>Port:</span> <span id="server-port">Loading...</span></li>
+                    <li><span>IP Address:</span> <span id="server-ip">Loading...</span></li>
+                    <li><span>Remote Access:</span> <span id="remote-status">Loading...</span></li>
+                </ul>
+                <button class="btn btn-secondary" onclick="refreshSystemInfo()">Refresh Info</button>
+            </div>
+
+            <div class="card">
+                <h3><span class="card-icon">🔧</span>Quick Actions</h3>
+                <p>Common administrative tasks and shortcuts.</p>
+                <a href="/client/" class="btn" target="_blank">Client Runtime</a>
+                <button class="btn btn-secondary" onclick="generateClientQR()">Client QR</button>
+                <div id="client-qrcode" class="qr-container" style="display: none;">
+                    <div class="qr-code"></div>
+                    <p>Scan to access client runtime</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/editor/js/qrcode.min.js"></script>
+    <script>
+        // Load system information
+        async function loadSystemInfo() {
+            try {
+                const response = await fetch('/ip');
+                const data = await response.json();
+                
+                document.getElementById('server-ip').textContent = data.ip || 'Unknown';
+                document.getElementById('remote-status').innerHTML = 
+                    data.remote 
+                        ? '<span class="status-indicator status-online"></span>Enabled' 
+                        : '<span class="status-indicator status-offline"></span>Disabled';
+                
+                // Determine port from current location
+                const port = window.location.port || (window.location.protocol === 'https:' ? '443' : '80');
+                document.getElementById('server-port').textContent = port;
+            } catch (error) {
+                console.error('Failed to load system info:', error);
+                document.getElementById('server-ip').textContent = 'Error loading';
+                document.getElementById('remote-status').textContent = 'Error loading';
+                document.getElementById('server-port').textContent = 'Error loading';
+            }
+        }
+
+        function refreshSystemInfo() {
+            loadSystemInfo();
+        }
+
+        async function generateQR(elementId, path) {
+            const container = document.getElementById(elementId);
+            const qrDiv = container.querySelector('.qr-code');
+            
+            if (container.style.display === 'none') {
+                // Clear previous QR code
+                qrDiv.innerHTML = '';
+                
+                try {
+                    // Get IP information to determine the correct URL
+                    const response = await fetch('/ip');
+                    const data = await response.json();
+                    
+                    // Use remote IP if remote access is enabled, otherwise use current origin
+                    const baseUrl = data.remote && data.ip !== '127.0.0.1' 
+                        ? `${window.location.protocol}//${data.ip}:${window.location.port || (window.location.protocol === 'https:' ? '443' : '80')}`
+                        : window.location.origin;
+                    
+                    const url = baseUrl + path;
+                    
+                    // Generate new QR code
+                    new QRCode(qrDiv, {
+                        text: url,
+                        width: 200,
+                        height: 200,
+                        colorDark: "#333",
+                        colorLight: "#fff"
+                    });
+                    
+                    console.log('Generated QR code for:', url);
+                } catch (error) {
+                    console.error('Failed to generate QR code:', error);
+                    qrDiv.innerHTML = '<p style="color: red;">Error generating QR code</p>';
+                }
+                
+                container.style.display = 'block';
+            } else {
+                container.style.display = 'none';
+            }
+        }
+
+        function generateEditorQR() {
+            generateQR('editor-qrcode', '/editor/');
+        }
+
+        function generateScriptsQR() {
+            generateQR('scripts-qrcode', '/scripts');
+        }
+
+        function generateMediaQR() {
+            generateQR('media-qrcode', '/media/');
+        }
+
+        function generateClientQR() {
+            generateQR('client-qrcode', '/client/');
+        }
+
+        // Password management functions
+        function generateRandomPassword() {
+            const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
+            let password = "";
+            for (let i = 0; i < 12; i++) {
+                password += charset.charAt(Math.floor(Math.random() * charset.length));
+            }
+            document.getElementById('new-password').value = password;
+            document.getElementById('confirm-password').value = password;
+            
+            // Show a temporary message
+            const messageDiv = document.getElementById('password-message');
+            messageDiv.style.color = '#007bff';
+            messageDiv.textContent = 'Random password generated. Please copy it before changing!';
+            setTimeout(() => {
+                messageDiv.textContent = '';
+            }, 3000);
+        }
+
+        async function changePassword() {
+            const currentPassword = document.getElementById('current-password').value;
+            const newPassword = document.getElementById('new-password').value;
+            const confirmPassword = document.getElementById('confirm-password').value;
+            const messageDiv = document.getElementById('password-message');
+
+            // Clear previous messages
+            messageDiv.textContent = '';
+
+            // Validation
+            if (!currentPassword || !newPassword || !confirmPassword) {
+                messageDiv.style.color = '#dc3545';
+                messageDiv.textContent = 'All fields are required.';
+                return;
+            }
+
+            if (newPassword !== confirmPassword) {
+                messageDiv.style.color = '#dc3545';
+                messageDiv.textContent = 'New passwords do not match.';
+                return;
+            }
+
+            if (newPassword.length < 8) {
+                messageDiv.style.color = '#dc3545';
+                messageDiv.textContent = 'New password must be at least 8 characters long.';
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/change-password', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    body: `currentPassword=${encodeURIComponent(currentPassword)}&newPassword=${encodeURIComponent(newPassword)}`
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    messageDiv.style.color = '#28a745';
+                    messageDiv.textContent = 'Password changed successfully!';
+                    
+                    // Clear form
+                    document.getElementById('current-password').value = '';
+                    document.getElementById('new-password').value = '';
+                    document.getElementById('confirm-password').value = '';
+                } else {
+                    messageDiv.style.color = '#dc3545';
+                    messageDiv.textContent = result.message || 'Failed to change password.';
+                }
+            } catch (error) {
+                console.error('Password change error:', error);
+                messageDiv.style.color = '#dc3545';
+                messageDiv.textContent = 'Error changing password. Please try again.';
+            }
+        }
+
+        async function logout() {
+            try {
+                const response = await fetch('/api/logout', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                });
+                
+                if (response.ok) {
+                    window.location.href = '/login.html';
+                } else {
+                    alert('Logout failed. Please try again.');
+                }
+            } catch (error) {
+                console.error('Logout error:', error);
+                // Force redirect even if logout request failed
+                window.location.href = '/login.html';
+            }
+        }
+
+        // Load system info on page load
+        document.addEventListener('DOMContentLoaded', loadSystemInfo);
+    </script>
+</body>
+</html>

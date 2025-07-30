@@ -1,13 +1,35 @@
 function _fetch(method, url, success, fail = false, send_data = false, file_upload = false) {
+    console.log('Fetch Debug:', {
+        method,
+        url,
+        hostname: window.location.hostname,
+        origin: window.location.origin,
+        send_data: !!send_data,
+        file_upload
+    });
+
     let params = { method: method }
     if (!file_upload) {
         // only set content type when not a file upload...
         params['headers'] = {"Content-Type": "text/plain"}
     }
-    if (!['DELETE', 'PUT'].includes(method)) {
-        // Can't DELETE/PUT in no-cors mode
+    
+    // For mobile devices accessing over network, don't use no-cors mode
+    // as it prevents reading the response body
+    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+    console.log('Is localhost:', isLocalhost);
+    
+    if (!['DELETE', 'PUT'].includes(method) && isLocalhost) {
+        // Only use no-cors mode for localhost access
         params['mode'] = "no-cors"
+        console.log('Using no-cors mode for localhost');
+    } else {
+        // For remote access, use cors mode with credentials
+        params['mode'] = "cors"
+        params['credentials'] = "include"
+        console.log('Using cors mode for remote access');
     }
+    
     if (send_data) {
         if (file_upload) {
             params['body'] = send_data
@@ -15,15 +37,45 @@ function _fetch(method, url, success, fail = false, send_data = false, file_uplo
             params['body'] = JSON.stringify(send_data)
         }
     }
-    fetch(url, params).then((response) => response.json()
-    ).then((res) => {
-        if (res.success) {
-        success(res)
+    
+    console.log('Fetch params:', params);
+    
+    fetch(url, params).then((response) => {
+        console.log('Response received:', {
+            status: response.status,
+            statusText: response.statusText,
+            mode: params['mode'],
+            ok: response.ok
+        });
+        
+        // For no-cors mode, we can't read the response body
+        if (params['mode'] === 'no-cors') {
+            // Assume success for no-cors mode
+            console.log('No-cors mode: assuming success');
+            success({ success: true })
+            return
+        }
+        return response.json()
+    }).then((res) => {
+        console.log('Parsed response:', res);
+        if (res && res.success) {
+            success(res)
         } else {
-        if (fail) { fail(res) }
+            console.log('Response indicates failure:', res);
+            if (fail) { fail(res) }
         }
     }).catch((err) => {
-        alert('Failed to find Quando:Local ')
+        console.error('Fetch error details:', {
+            error: err,
+            message: err.message,
+            stack: err.stack,
+            type: err.name,
+            hostname: window.location.hostname,
+            mode: params['mode']
+        });
+        
+        const errorMessage = isLocalhost ? 'Failed to find Quando:Local' : 'Network connection failed - check server is running'
+        alert(errorMessage + '\nCheck browser console for details.')
         console.log(err)
     })
 }
