@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Quando - Join Session</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            text-align: center; 
+            padding-top: 5vh; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white; 
+            margin: 0;
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 2em;
+        }
+        
+        h1 { 
+            font-weight: 300; 
+            font-size: 2.5em;
+            margin-bottom: 0.5em;
+        }
+        
+        .subtitle {
+            font-size: 1.2em;
+            margin-bottom: 2em;
+            opacity: 0.9;
+        }
+        
+        #qr-container {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            display: inline-block;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.2);
+            margin-bottom: 2em;
+        }
+        
+        #sas-container { 
+            font-size: 4em; 
+            font-weight: bold; 
+            letter-spacing: 0.2em; 
+            margin-top: 30px; 
+            margin-bottom: 40px;
+            height: auto;
+            min-height: 1.2em;
+            color: #f1c40f;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+            font-family: 'Courier New', monospace;
+            clear: both;
+        }
+        
+        .status {
+            font-size: 1.1em;
+            margin-top: 2em;
+            margin-bottom: 1.5em;
+            opacity: 0.8;
+            min-height: 2em;
+            clear: both;
+        }
+        
+        .instructions {
+            background: rgba(255,255,255,0.1);
+            padding: 1.5em;
+            border-radius: 10px;
+            margin-top: 2em;
+            backdrop-filter: blur(10px);
+        }
+        
+        .step {
+            margin: 0.5em 0;
+            font-size: 1.1em;
+        }
+        
+        @media (max-width: 768px) {
+            h1 { font-size: 2em; }
+            #sas-container { font-size: 3em; }
+            .container { padding: 1em; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📱 Scan to Connect</h1>
+        <div class="subtitle">Connect your mobile device to this Quando session</div>
+        
+        <div id="qr-container">
+            <div id="qrcode"></div>
+        </div>
+        
+        <div id="sas-container">Waiting for connection...</div>
+        <div class="status" id="status">Ready to pair</div>
+        
+        <div class="instructions">
+            <div class="step">1️⃣ Scan the QR code with your mobile device</div>
+            <div class="step">2️⃣ Tap "Pair" on your device</div>
+            <div class="step">3️⃣ Enter the 6-digit code that appears above</div>
+        </div>
+    </div>
+
+    <script src="/js/qrcode.min.js"></script>
+    <script>
+        let sessionId = generateSessionId();
+        const qrContainer = document.getElementById('qrcode');
+        const sasContainer = document.getElementById('sas-container');
+        const statusElement = document.getElementById('status');
+        let currentWs = null;
+        
+        function generateSessionId() {
+            return Math.random().toString(36).substring(2) + Date.now().toString(36);
+        }
+
+        function restartPairing() {
+            // Close existing WebSocket if any
+            if (currentWs) {
+                currentWs.close();
+                currentWs = null;
+            }
+            
+            // Generate new session ID
+            sessionId = generateSessionId();
+            console.log('Restarting pairing with new session:', sessionId);
+            
+            // Reset UI
+            sasContainer.textContent = "Waiting for connection...";
+            statusElement.textContent = 'Ready to pair';
+            
+            // Regenerate QR code and reconnect
+            generateQR();
+            connectWebSocket();
+        }
+
+        function generateQR() {
+            // Detect if we're accessing via remote IP and use that for QR code
+            const currentHost = window.location.host;
+            let qrHost = currentHost;
+            
+            // If we're on localhost/127.0.0.1, try to get the remote IP
+            if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+                // For local development, we'll fetch the remote IP from the server
+                fetch('/ip')
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success && data.remote && data.ip) {
+                            qrHost = `${data.ip}:${window.location.port || '8080'}`;
+                            generateQRWithHost(qrHost);
+                        } else {
+                            generateQRWithHost(currentHost);
+                        }
+                    })
+                    .catch(() => {
+                        generateQRWithHost(currentHost);
+                    });
+            } else {
+                // Already on remote IP, use current host
+                generateQRWithHost(currentHost);
+            }
+        }
+
+        function generateQRWithHost(host) {
+            try {
+                qrContainer.innerHTML = ''; // Clear previous QR code
+                const joinUrl = `${window.location.protocol}//${host}/pair/${sessionId}`;
+                console.log('Generating QR code for:', joinUrl);
+                
+                const qr = new QRCode(qrContainer, {
+                    text: joinUrl,
+                    width: 256,
+                    height: 256,
+                    colorDark: '#000000',
+                    colorLight: '#ffffff',
+                    correctLevel: QRCode.CorrectLevel.M
+                });
+                
+                statusElement.textContent = 'QR code ready - scan with your device';
+            } catch (error) {
+                console.error('Failed to generate QR code:', error);
+                qrContainer.innerHTML = '<p style="color: black;">QR Code generation failed</p>';
+                statusElement.textContent = 'QR code generation failed';
+            }
+        }
+
+        function connectWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/ws/handshake`;
+            console.log('Connecting to WebSocket:', wsUrl);
+            
+            currentWs = new WebSocket(wsUrl);
+
+            currentWs.onopen = () => {
+                console.log('WebSocket connected');
+                sasContainer.textContent = "Waiting for user...";
+                statusElement.textContent = 'Connected - waiting for mobile device';
+                
+                currentWs.send(JSON.stringify({ 
+                    type: 'register_display', 
+                    sessionId: sessionId 
+                }));
+            };
+
+            currentWs.onmessage = (event) => {
+                console.log('WebSocket message received:', event.data);
+                try {
+                    const data = JSON.parse(event.data);
+                    
+                    switch(data.type) {
+                        case 'show_sas':
+                            sasContainer.textContent = data.sas;
+                            statusElement.textContent = 'Enter this code on your mobile device';
+                            break;
+                        case 'pairing_complete':
+                            sasContainer.textContent = "✅ PAIRED!";
+                            statusElement.textContent = 'Device successfully connected';
+                            break;
+                        case 'client_disconnected':
+                            sasContainer.textContent = "📱 Ready to pair";
+                            statusElement.textContent = 'Device disconnected - ready for new pairing';
+                            // Don't need to restart - same session can be reused
+                            break;
+                        case 'session_invalidated':
+                            sasContainer.textContent = "🔄 Creating new session...";
+                            statusElement.textContent = 'Session invalidated - creating new pairing session';
+                            // Generate new session and restart
+                            setTimeout(() => {
+                                restartPairing();
+                            }, 1000);
+                            break;
+                    }
+                } catch (error) {
+                    console.error('Failed to parse WebSocket message:', error);
+                }
+            };
+
+            currentWs.onclose = () => {
+                console.log('WebSocket disconnected');
+                sasContainer.textContent = "Connection lost";
+                statusElement.textContent = 'Connection lost - please reload page';
+                currentWs = null;
+            };
+            
+            currentWs.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                sasContainer.textContent = "Connection error";
+                statusElement.textContent = 'Connection error - please reload page';
+            };
+        }
+
+        // Initialize the page
+        generateQR();
+        connectWebSocket();
+    </script>
+</body>
+</html>

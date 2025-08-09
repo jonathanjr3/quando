@@ -3,6 +3,28 @@
 <head> 
     <title>{{ title }}</title>
     <meta charset="UTF-8">
+    <script>
+        // Try to get token from URL first, then from localStorage
+        const urlParams = new URLSearchParams(window.location.search);
+        let token = urlParams.get('token');
+        
+        if (token) {
+            localStorage.setItem('quando-session-token', token);
+            // Don't clean the URL immediately - wait for all resources to load
+            // so the referer header will contain the token for resource requests
+            window.addEventListener('load', function() {
+                // Clean the URL after all resources have loaded
+                window.history.replaceState({}, document.title, window.location.pathname);
+            });
+        } else {
+            token = localStorage.getItem('quando-session-token');
+        }
+
+        if (!token || !token.startsWith('TOKEN_')) {
+            alert("No valid session found. Please pair your device first.");
+            window.location.href = '/join';
+        }
+    </script>
     <link href="/client/client.css" rel="stylesheet" type="text/css" />
     <script type="module" src="/client/client.js"></script>
     <script type="module" src="/client/modules/display.js"></script>

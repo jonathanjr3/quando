@@ -3,33 +3,118 @@
     <title>Setup Client</title>
     <meta charset="UTF-8">
     <script type="text/javascript">
-            function onload() {
-                fetch("/scripts").then((res) => res.json()).then(
-                    (response) => {
-                        if (response.success) {
-                            var list = document.getElementById("list_js");
-                            list.innerHTML = '';
-                            var result = '';
-                            for(var i=0; i<response.files.length; i++) {
-                                result += '<button onclick="setJs(\'' + response.files[i] + '\');">' + response.files[i] + '</button><br/>';
-                            }
-                            list.innerHTML = result;
+        function onload() {
+            // Try to get token from URL first, then from localStorage
+            const urlParams = new URLSearchParams(window.location.search);
+            let token = urlParams.get('token');
+            
+            if (token) {
+                localStorage.setItem('quando-session-token', token);
+                // Clean the URL
+                window.history.replaceState({}, document.title, "/client/setup.html");
+            } else {
+                token = localStorage.getItem('quando-session-token');
+            }
+
+            if (!token || !token.startsWith('TOKEN_')) {
+                document.body.innerHTML = '<h1>Unauthorized</h1><p>No valid session found. Please <a href="/join">pair your device</a> first.</p>';
+                return;
+            }
+
+            fetch(`/scripts?token=${encodeURIComponent(token)}`).then((res) => res.json()).then(
+                (response) => {
+                    if (response.success) {
+                        var list = document.getElementById("list_js");
+                        list.innerHTML = '';
+                        var result = '';
+                        for(var i=0; i<response.files.length; i++) {
+                            result += '<button onclick="setJs(\'' + response.files[i] + '\');">' + response.files[i] + '</button><br/>';
                         }
+                        list.innerHTML = result;
+                    } else {
+                        document.getElementById("list_js").innerHTML = 'Error loading scripts: ' + (response.message || 'Unknown error');
                     }
-                );
+                }
+            ).catch(error => {
+                console.error('Error fetching scripts:', error);
+                document.getElementById("list_js").innerHTML = 'Error loading scripts. Please check your connection.';
+            });
+        }
+        function setJs(name) {
+            localStorage.setItem('client_js', name);
+            const token = localStorage.getItem('quando-session-token');
+            document.location = `/client/?token=${encodeURIComponent(token)}`;
+        }
+        
+        function disconnect() {
+            const token = localStorage.getItem('quando-session-token');
+            if (token) {
+                fetch('/disconnect', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': token,
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    }
+                }).then(response => {
+                    if (response.ok) {
+                        localStorage.removeItem('quando-session-token');
+                        alert('Successfully disconnected from server.');
+                        window.location.href = '/join';
+                    } else {
+                        alert('Failed to disconnect. Please try again.');
+                    }
+                }).catch(error => {
+                    console.error('Error disconnecting:', error);
+                    alert('Error disconnecting. Please try again.');
+                });
+            } else {
+                window.location.href = '/join';
             }
-            function setJs(name) {
-                localStorage.setItem('client_js', name);
-                document.location="/client"; // TODO Check
+        }
+        
+        function disconnect() {
+            if (confirm('Are you sure you want to disconnect? You will need to pair again.')) {
+                // Send disconnect message via WebSocket if possible
+                const token = localStorage.getItem('quando-session-token');
+                if (token) {
+                    // Extract session ID from token
+                    const parts = token.split('_');
+                    if (parts.length >= 3) {
+                        const sessionId = parts[1];
+                        
+                        // Try to notify server of disconnect
+                        const ws = new WebSocket(`ws://${window.location.host}/ws/handshake`);
+                        ws.onopen = () => {
+                            ws.send(JSON.stringify({ 
+                                type: 'register_client', 
+                                sessionId: sessionId 
+                            }));
+                            ws.send(JSON.stringify({ 
+                                type: 'disconnect' 
+                            }));
+                            ws.close();
+                        };
+                    }
+                }
+                
+                // Clear local storage and redirect
+                localStorage.removeItem('quando-session-token');
+                localStorage.removeItem('client_js');
+                alert('Disconnected successfully');
+                window.location.href = '/join';
             }
-        </script>
+        }
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" href="/favicon.ico">
     <link rel="stylesheet" href="setup.css">
 </head>
 
 <body onload="onload();">
-    <div>Choose script to execute by default:</div>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <div>Choose script to execute by default:</div>
+        <button onclick="disconnect()" style="background: #ff4444; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;">Disconnect</button>
+    </div>
     <div id='list_js'>Loading...</div>
 </body>
 
