@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"quando/internal/server/auth"
 	"strings"
 )
 
@@ -13,9 +14,9 @@ func PairingAwareMiddleware(sessionManager *SessionManager) func(http.Handler) h
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			fmt.Printf("DEBUG: PairingAwareMiddleware called for %s\n", r.URL.Path)
 
-			// First check for admin authentication (basic check for now)
-			if r.Header.Get("X-Admin-Auth") != "" {
-				fmt.Printf("DEBUG: Admin authentication passed\n")
+			// First check for admin authentication using session
+			if auth.IsAuthenticated(r) {
+				fmt.Printf("DEBUG: Admin authentication passed via session\n")
 				next.ServeHTTP(w, r)
 				return
 			}
