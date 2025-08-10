@@ -352,7 +352,7 @@ func (sm *SessionManager) handlePairingMessage(sessionID string, msg map[string]
 				if session.ExpiryTimer != nil {
 					session.ExpiryTimer.Stop()
 				}
-				session.ExpiryTimer = time.AfterFunc(10*time.Minute, func() {
+				session.ExpiryTimer = time.AfterFunc(GetSessionExpiryDuration(), func() {
 					sm.CleanupSession(sessionID)
 				})
 			} else {

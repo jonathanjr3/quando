@@ -59,7 +59,7 @@
                     if (response.ok) {
                         localStorage.removeItem('quando-session-token');
                         alert('Successfully disconnected from server.');
-                        window.location.href = '/join';
+                        window.location.href = '/goodbye';
                     } else {
                         alert('Failed to disconnect. Please try again.');
                     }
@@ -68,7 +68,7 @@
                     alert('Error disconnecting. Please try again.');
                 });
             } else {
-                window.location.href = '/join';
+                window.location.href = '/goodbye';
             }
         }
         
@@ -101,7 +101,7 @@
                 localStorage.removeItem('quando-session-token');
                 localStorage.removeItem('client_js');
                 alert('Disconnected successfully');
-                window.location.href = '/join';
+                window.location.href = '/goodbye';
             }
         }
     </script>

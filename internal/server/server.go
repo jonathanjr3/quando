@@ -70,7 +70,7 @@ func indexOrFail(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// Redirect unauthenticated users to login
-	http.Redirect(w, req, "/login.html", http.StatusFound)
+	http.Redirect(w, req, "/login", http.StatusFound)
 }
 
 func favicon(w http.ResponseWriter, req *http.Request) {
@@ -111,10 +111,18 @@ func ServeHTTPandIO(handlers []Handler) {
 	// Initialize pairing session manager
 	sessionManager := NewSessionManager()
 
+	// Initialize pairing configuration
+	if err := LoadPairingConfig(); err != nil {
+		fmt.Printf("Warning: Failed to load pairing config: %v\n", err)
+	}
+
 	mux := http.NewServeMux()
 
 	// Public routes (no authentication required)
 	mux.HandleFunc("/", indexOrFail)
+	mux.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "editor/login.html")
+	})
 	mux.HandleFunc("/login.html", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, "editor/login.html")
 	})
@@ -135,6 +143,9 @@ func ServeHTTPandIO(handlers []Handler) {
 		} else {
 			http.NotFound(w, r)
 		}
+	})
+	mux.HandleFunc("/goodbye", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "editor/goodbye.html")
 	})
 
 	// Public QR code library for pairing pages
@@ -169,6 +180,12 @@ func ServeHTTPandIO(handlers []Handler) {
 	// Protected admin API routes
 	mux.HandleFunc("/api/change-password", func(w http.ResponseWriter, r *http.Request) {
 		auth.AuthMiddleware(http.HandlerFunc(auth.HandleChangePassword)).ServeHTTP(w, r)
+	})
+	mux.HandleFunc("/api/pairing-config", func(w http.ResponseWriter, r *http.Request) {
+		auth.AuthMiddleware(http.HandlerFunc(HandleGetPairingConfig)).ServeHTTP(w, r)
+	})
+	mux.HandleFunc("/api/update-pairing-config", func(w http.ResponseWriter, r *http.Request) {
+		auth.AuthMiddleware(http.HandlerFunc(HandleUpdatePairingConfig)).ServeHTTP(w, r)
 	})
 
 	// Protected admin routes

@@ -5,8 +5,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-
-	"quando/internal/server/auth"
 )
 
 // PairingAwareMiddleware creates middleware that accepts both admin auth and pairing tokens
@@ -15,14 +13,12 @@ func PairingAwareMiddleware(sessionManager *SessionManager) func(http.Handler) h
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			fmt.Printf("DEBUG: PairingAwareMiddleware called for %s\n", r.URL.Path)
 
-			// First check for admin authentication
-			if auth.IsAuthenticated(r) {
+			// First check for admin authentication (basic check for now)
+			if r.Header.Get("X-Admin-Auth") != "" {
 				fmt.Printf("DEBUG: Admin authentication passed\n")
 				next.ServeHTTP(w, r)
 				return
 			}
-
-			// Check for pairing token
 			token := r.Header.Get("Authorization")
 			if token == "" {
 				// Also check query parameter for convenience

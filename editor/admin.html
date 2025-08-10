@@ -157,28 +157,6 @@
             </div>
 
             <div class="card">
-                <h3><span class="card-icon">📁</span>Script Management</h3>
-                <p>View and manage saved scripts and projects.</p>
-                <a href="/scripts" class="btn" target="_blank">Browse Scripts</a>
-                <button class="btn btn-secondary" onclick="generateScriptsQR()">Scripts QR</button>
-                <div id="scripts-qrcode" class="qr-container" style="display: none;">
-                    <div class="qr-code"></div>
-                    <p>Scan to access scripts from mobile device</p>
-                </div>
-            </div>
-
-            <div class="card">
-                <h3><span class="card-icon">🎨</span>Media Library</h3>
-                <p>Upload and manage images, videos, audio, and 3D objects.</p>
-                <a href="/media/" class="btn" target="_blank">Browse Media</a>
-                <button class="btn btn-secondary" onclick="generateMediaQR()">Media QR</button>
-                <div id="media-qrcode" class="qr-container" style="display: none;">
-                    <div class="qr-code"></div>
-                    <p>Scan to access media from mobile device</p>
-                </div>
-            </div>
-
-            <div class="card">
                 <h3><span class="card-icon">�</span>Password Management</h3>
                 <p>Change your admin password for enhanced security.</p>
                 <div id="change-password-form" style="margin-top: 1em;">
@@ -202,6 +180,23 @@
                     <li><span>Remote Access:</span> <span id="remote-status">Loading...</span></li>
                 </ul>
                 <button class="btn btn-secondary" onclick="refreshSystemInfo()">Refresh Info</button>
+            </div>
+
+            <div class="card">
+                <h3><span class="card-icon">⚙️</span>Pairing Configuration</h3>
+                <p>Configure pairing session timeouts and QR code refresh intervals.</p>
+                <div style="margin-bottom: 1em;">
+                    <label for="qr-refresh" style="display: block; margin-bottom: 0.5em; font-weight: 500;">QR Code Refresh Interval (minutes):</label>
+                    <input type="number" id="qr-refresh" min="1" max="60" value="5" style="width: 100%; padding: 0.5em; border: 1px solid #ddd; border-radius: 4px;">
+                    <small style="color: #666;">Range: 1-60 minutes</small>
+                </div>
+                <div style="margin-bottom: 1em;">
+                    <label for="session-expiry" style="display: block; margin-bottom: 0.5em; font-weight: 500;">Session Expiry Timeout (minutes):</label>
+                    <input type="number" id="session-expiry" min="1" max="240" value="10" style="width: 100%; padding: 0.5em; border: 1px solid #ddd; border-radius: 4px;">
+                    <small style="color: #666;">Range: 1-240 minutes</small>
+                </div>
+                <button class="btn" onclick="updatePairingConfig()">Update Configuration</button>
+                <div id="config-status" style="margin-top: 1em; font-size: 0.9em;"></div>
             </div>
 
             <div class="card">
@@ -289,14 +284,6 @@
 
         function generateEditorQR() {
             generateQR('editor-qrcode', '/editor/');
-        }
-
-        function generateScriptsQR() {
-            generateQR('scripts-qrcode', '/scripts');
-        }
-
-        function generateMediaQR() {
-            generateQR('media-qrcode', '/media/');
         }
 
         function generateClientQR() {
@@ -403,8 +390,84 @@
             }
         }
 
-        // Load system info on page load
-        document.addEventListener('DOMContentLoaded', loadSystemInfo);
+        // Pairing configuration functions
+        async function loadPairingConfig() {
+            try {
+                const response = await fetch('/api/pairing-config');
+                const result = await response.json();
+                
+                if (response.ok && result.success) {
+                    document.getElementById('qr-refresh').value = result.config.qr_refresh_interval_minutes;
+                    document.getElementById('session-expiry').value = result.config.session_expiry_minutes;
+                    
+                    const statusDiv = document.getElementById('config-status');
+                    statusDiv.style.color = '#28a745';
+                    statusDiv.textContent = 'Configuration loaded successfully.';
+                    setTimeout(() => statusDiv.textContent = '', 3000);
+                } else {
+                    const statusDiv = document.getElementById('config-status');
+                    statusDiv.style.color = '#dc3545';
+                    statusDiv.textContent = 'Failed to load configuration.';
+                }
+            } catch (error) {
+                console.error('Failed to load pairing config:', error);
+                const statusDiv = document.getElementById('config-status');
+                statusDiv.style.color = '#dc3545';
+                statusDiv.textContent = 'Error loading configuration.';
+            }
+        }
+
+        async function updatePairingConfig() {
+            const qrRefresh = parseInt(document.getElementById('qr-refresh').value);
+            const sessionExpiry = parseInt(document.getElementById('session-expiry').value);
+            const statusDiv = document.getElementById('config-status');
+
+            // Validate inputs
+            if (qrRefresh < 1 || qrRefresh > 60) {
+                statusDiv.style.color = '#dc3545';
+                statusDiv.textContent = 'QR refresh interval must be between 1 and 60 minutes.';
+                return;
+            }
+            
+            if (sessionExpiry < 1 || sessionExpiry > 240) {
+                statusDiv.style.color = '#dc3545';
+                statusDiv.textContent = 'Session expiry must be between 1 and 240 minutes.';
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/update-pairing-config', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        qr_refresh_interval_minutes: qrRefresh,
+                        session_expiry_minutes: sessionExpiry
+                    })
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    statusDiv.style.color = '#28a745';
+                    statusDiv.textContent = 'Configuration updated successfully! Changes are effective immediately.';
+                } else {
+                    statusDiv.style.color = '#dc3545';
+                    statusDiv.textContent = result.message || 'Failed to update configuration.';
+                }
+            } catch (error) {
+                console.error('Failed to update pairing config:', error);
+                statusDiv.style.color = '#dc3545';
+                statusDiv.textContent = 'Error updating configuration.';
+            }
+        }
+
+        // Load system info and pairing config on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            loadSystemInfo();
+            loadPairingConfig();
+        });
     </script>
 </body>
 </html>
