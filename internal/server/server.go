@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"quando/internal/config"
 	"quando/internal/server/auth"
 	"quando/internal/server/blocks"
@@ -11,6 +12,7 @@ import (
 	"quando/internal/server/media"
 	"quando/internal/server/scripts"
 	"quando/internal/server/socket"
+	"strconv"
 	"strings"
 
 	"golang.org/x/net/websocket"
@@ -28,6 +30,93 @@ func Port() string {
 	return port
 }
 
+// isAllowedLocalOrigin validates if an origin is from a trusted local source
+func isAllowedLocalOrigin(originStr string) bool {
+	if originStr == "" {
+		return false
+	}
+
+	// Parse the origin URL
+	originURL, err := url.Parse(originStr)
+	if err != nil {
+		return false
+	}
+
+	// Extract hostname (removes port if present)
+	hostname := originURL.Hostname()
+	if hostname == "" {
+		return false
+	}
+
+	// Check for exact localhost matches
+	if hostname == "localhost" || hostname == "127.0.0.1" {
+		return true
+	}
+
+	// Check for private network ranges (RFC 1918)
+	// 192.168.0.0/16
+	if strings.HasPrefix(hostname, "192.168.") {
+		parts := strings.Split(hostname, ".")
+		if len(parts) == 4 {
+			// Validate it's actually an IP (all parts are numeric)
+			for _, part := range parts {
+				if len(part) == 0 || len(part) > 3 {
+					return false
+				}
+				for _, char := range part {
+					if char < '0' || char > '9' {
+						return false
+					}
+				}
+			}
+			return true
+		}
+	}
+
+	// Check for 10.0.0.0/8 private range
+	if strings.HasPrefix(hostname, "10.") {
+		parts := strings.Split(hostname, ".")
+		if len(parts) == 4 {
+			// Validate it's actually an IP
+			for _, part := range parts {
+				if len(part) == 0 || len(part) > 3 {
+					return false
+				}
+				for _, char := range part {
+					if char < '0' || char > '9' {
+						return false
+					}
+				}
+			}
+			return true
+		}
+	}
+
+	// Check for 172.16.0.0/12 private range
+	if strings.HasPrefix(hostname, "172.") {
+		parts := strings.Split(hostname, ".")
+		if len(parts) == 4 && len(parts[1]) > 0 {
+			// Validate second octet is between 16-31 for 172.16.0.0/12
+			if secondOctet, err := strconv.Atoi(parts[1]); err == nil && secondOctet >= 16 && secondOctet <= 31 {
+				// Validate all parts are numeric
+				for _, part := range parts {
+					if len(part) == 0 || len(part) > 3 {
+						return false
+					}
+					for _, char := range part {
+						if char < '0' || char > '9' {
+							return false
+						}
+					}
+				}
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
 // CORS middleware to handle cross-origin requests from mobile devices
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -35,9 +124,9 @@ func corsMiddleware(next http.Handler) http.Handler {
 		if config.Remote() {
 			w.Header().Set("Access-Control-Allow-Origin", "*")
 		} else {
-			// For local mode, allow localhost and local network
+			// For local mode, use secure origin validation
 			origin := r.Header.Get("Origin")
-			if origin != "" && (strings.Contains(origin, "localhost") || strings.Contains(origin, "127.0.0.1") || strings.Contains(origin, "192.168.") || strings.Contains(origin, "10.")) {
+			if origin != "" && isAllowedLocalOrigin(origin) {
 				w.Header().Set("Access-Control-Allow-Origin", origin)
 			}
 		}

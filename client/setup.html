@@ -47,61 +47,76 @@
         }
         
         function disconnect() {
-            const token = localStorage.getItem('quando-session-token');
-            if (token) {
-                fetch('/disconnect', {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': token,
-                        'Content-Type': 'application/x-www-form-urlencoded'
-                    }
-                }).then(response => {
-                    if (response.ok) {
-                        localStorage.removeItem('quando-session-token');
-                        alert('Successfully disconnected from server.');
-                        window.location.href = '/goodbye';
-                    } else {
-                        alert('Failed to disconnect. Please try again.');
-                    }
-                }).catch(error => {
-                    console.error('Error disconnecting:', error);
-                    alert('Error disconnecting. Please try again.');
-                });
-            } else {
-                window.location.href = '/goodbye';
-            }
-        }
-        
-        function disconnect() {
             if (confirm('Are you sure you want to disconnect? You will need to pair again.')) {
-                // Send disconnect message via WebSocket if possible
                 const token = localStorage.getItem('quando-session-token');
                 if (token) {
-                    // Extract session ID from token
-                    const parts = token.split('_');
-                    if (parts.length >= 3) {
-                        const sessionId = parts[1];
+                    // First try the proper disconnect endpoint
+                    fetch('/disconnect', {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': token,
+                            'Content-Type': 'application/x-www-form-urlencoded'
+                        }
+                    }).then(response => {
+                        if (response.ok) {
+                            console.log('Successfully disconnected via API');
+                        } else {
+                            console.warn('API disconnect failed, trying WebSocket method');
+                            
+                            // Fallback: try WebSocket disconnect
+                            const parts = token.split('_');
+                            if (parts.length >= 3) {
+                                const sessionId = parts[1];
+                                
+                                const ws = new WebSocket(`ws://${window.location.host}/ws/handshake`);
+                                ws.onopen = () => {
+                                    ws.send(JSON.stringify({ 
+                                        type: 'register_client', 
+                                        sessionId: sessionId 
+                                    }));
+                                    ws.send(JSON.stringify({ 
+                                        type: 'disconnect' 
+                                    }));
+                                    ws.close();
+                                };
+                            }
+                        }
                         
-                        // Try to notify server of disconnect
-                        const ws = new WebSocket(`ws://${window.location.host}/ws/handshake`);
-                        ws.onopen = () => {
-                            ws.send(JSON.stringify({ 
-                                type: 'register_client', 
-                                sessionId: sessionId 
-                            }));
-                            ws.send(JSON.stringify({ 
-                                type: 'disconnect' 
-                            }));
-                            ws.close();
-                        };
-                    }
+                        // Always clean up and redirect regardless of API success
+                        localStorage.removeItem('quando-session-token');
+                        localStorage.removeItem('client_js');
+                        window.location.href = '/goodbye';
+                        
+                    }).catch(error => {
+                        console.error('Error disconnecting via API:', error);
+                        
+                        // Fallback: try WebSocket method on error
+                        const parts = token.split('_');
+                        if (parts.length >= 3) {
+                            const sessionId = parts[1];
+                            
+                            const ws = new WebSocket(`ws://${window.location.host}/ws/handshake`);
+                            ws.onopen = () => {
+                                ws.send(JSON.stringify({ 
+                                    type: 'register_client', 
+                                    sessionId: sessionId 
+                                }));
+                                ws.send(JSON.stringify({ 
+                                    type: 'disconnect' 
+                                }));
+                                ws.close();
+                            };
+                        }
+                        
+                        // Clean up and redirect even on error
+                        localStorage.removeItem('quando-session-token');
+                        localStorage.removeItem('client_js');
+                        window.location.href = '/goodbye';
+                    });
+                } else {
+                    // No token, just redirect
+                    window.location.href = '/goodbye';
                 }
-                
-                // Clear local storage and redirect
-                localStorage.removeItem('quando-session-token');
-                localStorage.removeItem('client_js');
-                alert('Disconnected successfully');
-                window.location.href = '/goodbye';
             }
         }
     </script>
