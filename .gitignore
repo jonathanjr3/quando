@@ -37,3 +37,6 @@ scripts/*
 # executables
 *.exe
 quando
+
+# github config
+.github
