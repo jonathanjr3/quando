@@ -7,9 +7,11 @@ toolchain go1.23.7
 require (
 	fyne.io/systray v1.11.0
 	github.com/go-vgo/robotgo v0.110.8
+	github.com/gorilla/sessions v1.4.0
 	github.com/skratchdot/open-golang v0.0.0-20200116055534-eef842397966
 	github.com/zserge/lorca v0.1.10
 	go.bug.st/serial v1.6.4
+	golang.org/x/crypto v0.40.0
 	golang.org/x/net v0.41.0
 )
 
@@ -20,6 +22,7 @@ require (
 	github.com/gen2brain/shm v0.1.1 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
+	github.com/gorilla/securecookie v1.1.2 // indirect
 	github.com/jezek/xgb v1.1.1 // indirect
 	github.com/lufia/plan9stats v0.0.0-20250317134145-8bc96cf8fc35 // indirect
 	github.com/otiai10/gosseract v2.2.1+incompatible // indirect
@@ -39,5 +42,5 @@ require (
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	golang.org/x/exp v0.0.0-20250620022241-b7579e27df2b // indirect
 	golang.org/x/image v0.28.0 // indirect
-	golang.org/x/sys v0.33.0 // indirect
+	golang.org/x/sys v0.34.0 // indirect
 )

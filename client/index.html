@@ -7,11 +7,31 @@
         <meta charset="UTF-8">
         <script type="text/javascript">
             function redirect() {
+                // Try to get token from URL first, then from localStorage
+                const urlParams = new URLSearchParams(window.location.search);
+                let token = urlParams.get('token');
+                
+                if (token) {
+                    localStorage.setItem('quando-session-token', token);
+                    // Clean the URL
+                    window.history.replaceState({}, document.title, "/client/");
+                } else {
+                    token = localStorage.getItem('quando-session-token');
+                }
+
+                if (!token || !token.startsWith('TOKEN_')) {
+                    document.location = '/goodbye';
+                    return;
+                }
+
                 var url = '/client/setup.html';
                 var item = localStorage.getItem('client_js');
                 if (item != null) {
                     url = '/scripts/' + item + ".html"
                 }
+                
+                // Add token to the redirect URL
+                url += '?token=' + encodeURIComponent(token);
                 document.location = url;
             }
             </script>
