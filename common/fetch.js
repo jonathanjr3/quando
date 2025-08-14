@@ -14,21 +14,11 @@ function _fetch(method, url, success, fail = false, send_data = false, file_uplo
         params['headers'] = {"Content-Type": "text/plain"}
     }
     
-    // For mobile devices accessing over network, don't use no-cors mode
-    // as it prevents reading the response body
-    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-    console.log('Is localhost:', isLocalhost);
-    
-    if (!['DELETE', 'PUT'].includes(method) && isLocalhost) {
-        // Only use no-cors mode for localhost access
-        params['mode'] = "no-cors"
-        console.log('Using no-cors mode for localhost');
-    } else {
-        // For remote access, use cors mode with credentials
-        params['mode'] = "cors"
-        params['credentials'] = "include"
-        console.log('Using cors mode for remote access');
-    }
+    // Use cors mode with credentials for all requests
+    // since we've properly configured CORS headers
+    params['mode'] = "cors"
+    params['credentials'] = "include"
+    console.log('Using cors mode with credentials');
     
     if (send_data) {
         if (file_upload) {
@@ -48,13 +38,6 @@ function _fetch(method, url, success, fail = false, send_data = false, file_uplo
             ok: response.ok
         });
         
-        // For no-cors mode, we can't read the response body
-        if (params['mode'] === 'no-cors') {
-            // Assume success for no-cors mode
-            console.log('No-cors mode: assuming success');
-            success({ success: true })
-            return
-        }
         return response.json()
     }).then((res) => {
         console.log('Parsed response:', res);
@@ -74,6 +57,7 @@ function _fetch(method, url, success, fail = false, send_data = false, file_uplo
             mode: params['mode']
         });
         
+        const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
         const errorMessage = isLocalhost ? 'Failed to find Quando:Local' : 'Network connection failed - check server is running'
         alert(errorMessage + '\nCheck browser console for details.')
         console.log(err)

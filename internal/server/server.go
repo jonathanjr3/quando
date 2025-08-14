@@ -120,15 +120,29 @@ func isAllowedLocalOrigin(originStr string) bool {
 // CORS middleware to handle cross-origin requests from mobile devices
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Allow requests from any origin when in remote mode
-		if config.Remote() {
-			w.Header().Set("Access-Control-Allow-Origin", "*")
-		} else {
-			// For local mode, use secure origin validation
-			origin := r.Header.Get("Origin")
-			if origin != "" && isAllowedLocalOrigin(origin) {
-				w.Header().Set("Access-Control-Allow-Origin", origin)
+		origin := r.Header.Get("Origin")
+
+		// Always allow localhost and 127.0.0.1 regardless of mode
+		// Use flexible pattern matching for any port
+		if origin != "" {
+			originURL, err := url.Parse(origin)
+			if err == nil {
+				hostname := originURL.Hostname()
+				if hostname == "localhost" || hostname == "127.0.0.1" {
+					w.Header().Set("Access-Control-Allow-Origin", origin)
+				} else if config.Remote() {
+					// In remote mode, allow any origin for cross-device access
+					w.Header().Set("Access-Control-Allow-Origin", "*")
+				} else {
+					// For local mode, use secure origin validation
+					if isAllowedLocalOrigin(origin) {
+						w.Header().Set("Access-Control-Allow-Origin", origin)
+					}
+				}
 			}
+		} else if config.Remote() {
+			// Fallback for remote mode when no origin header
+			w.Header().Set("Access-Control-Allow-Origin", "*")
 		}
 
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
@@ -276,6 +290,7 @@ func ServeHTTPandIO(handlers []Handler) {
 	mux.HandleFunc("/api/update-pairing-config", func(w http.ResponseWriter, r *http.Request) {
 		auth.AuthMiddleware(http.HandlerFunc(HandleUpdatePairingConfig)).ServeHTTP(w, r)
 	})
+	mux.HandleFunc("/api/auth-check", auth.HandleAuthCheck)
 
 	// Protected admin routes
 	mux.HandleFunc("/admin", func(w http.ResponseWriter, r *http.Request) {

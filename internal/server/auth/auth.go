@@ -182,6 +182,19 @@ func IsAuthenticated(r *http.Request) bool {
 	return false
 }
 
+// HandleAuthCheck returns JSON indicating if user is authenticated
+func HandleAuthCheck(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	result := map[string]bool{
+		"authenticated": IsAuthenticated(r),
+	}
+
+	if err := json.NewEncoder(w).Encode(result); err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
+}
+
 // UpdateAdminPassword updates the admin password
 func UpdateAdminPassword(currentPassword, newPassword string) error {
 	configDir, _ := os.UserConfigDir()

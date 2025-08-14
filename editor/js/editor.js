@@ -850,8 +850,9 @@ export function generateCode(elem) {
 
 export function testCreator(code) {
   client_script = code  // allows opened window to get generated code
-  let deploy_window = window.open('/client/client.html', 'quando_deployed_test', 'left=0,top=0,width=9999,height=9999');
-  deploy_window.focus() // moveTo(0,0);
+  // Open in new tab instead of popup window for better debugging
+  let deploy_window = window.open('/client/client.html', '_blank');
+  deploy_window.focus();
 }
 
 export function handle_test() {
