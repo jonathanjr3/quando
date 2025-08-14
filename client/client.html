@@ -20,10 +20,68 @@
             token = localStorage.getItem('quando-session-token');
         }
 
-        if (!token || !token.startsWith('TOKEN_')) {
-            alert("No valid session found. Please pair your device first.");
-            window.location.href = '/goodbye';
+        // Check authentication status - either pairing token or admin session
+        async function checkAuthentication() {
+            console.log('Checking authentication...');
+            console.log('Token from localStorage:', token);
+            
+            // First check if we have a valid pairing token
+            if (token && token.startsWith('TOKEN_')) {
+                console.log('Valid pairing token found');
+                return true;
+            }
+            
+            // If no pairing token, check if user is authenticated admin
+            console.log('No pairing token, checking admin authentication...');
+            try {
+                const response = await fetch('/api/auth-check', {
+                    credentials: 'include' // Include session cookies
+                });
+                console.log('Auth check response status:', response.status);
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('Auth check response data:', data);
+                    if (data.authenticated) {
+                        console.log('Admin authentication confirmed');
+                        return true;
+                    }
+                }
+            } catch (error) {
+                console.log('Auth check failed:', error);
+            }
+            
+            console.log('Authentication failed');
+            return false;
         }
+
+        // Check authentication and redirect if necessary
+        checkAuthentication().then(isAuthenticated => {
+            if (!isAuthenticated) {
+                // Show debug info on page instead of immediate alert
+                document.body.innerHTML = `
+                    <div style="padding: 20px; font-family: Arial;">
+                        <h2>Authentication Debug Info</h2>
+                        <p><strong>Token from localStorage:</strong> ${token || 'null'}</p>
+                        <p><strong>Token valid:</strong> ${token && token.startsWith('TOKEN_') ? 'Yes' : 'No'}</p>
+                        <p id="auth-status">Checking admin authentication...</p>
+                        <p><strong>Console logs:</strong> Check browser console (F12) for detailed logs</p>
+                        <button onclick="window.location.href='/goodbye'">Continue to Goodbye Page</button>
+                    </div>
+                `;
+                
+                // Test the auth endpoint again and show result
+                fetch('/api/auth-check', { credentials: 'include' })
+                    .then(response => response.json())
+                    .then(data => {
+                        document.getElementById('auth-status').innerHTML = 
+                            `<strong>Admin authentication result:</strong> ${data.authenticated ? 'AUTHENTICATED' : 'NOT AUTHENTICATED'}`;
+                    })
+                    .catch(error => {
+                        document.getElementById('auth-status').innerHTML = 
+                            `<strong>Admin authentication error:</strong> ${error.message}`;
+                    });
+            }
+        });
     </script>
     <link href="/client/client.css" rel="stylesheet" type="text/css" />
     <script type="module" src="/client/client.js"></script>
