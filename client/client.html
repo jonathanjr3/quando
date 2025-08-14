@@ -34,7 +34,8 @@
             // If no pairing token, check if user is authenticated admin
             console.log('No pairing token, checking admin authentication...');
             try {
-                const response = await fetch('/api/auth-check', {
+                const authCheckUrl = window.location.protocol + '//' + window.location.host + '/api/auth-check';
+                const response = await fetch(authCheckUrl, {
                     credentials: 'include' // Include session cookies
                 });
                 console.log('Auth check response status:', response.status);
@@ -57,28 +58,68 @@
         // Check authentication and redirect if necessary
         checkAuthentication().then(isAuthenticated => {
             if (!isAuthenticated) {
-                // Show debug info on page instead of immediate alert
-                document.body.innerHTML = `
-                    <div style="padding: 20px; font-family: Arial;">
-                        <h2>Authentication Debug Info</h2>
-                        <p><strong>Token from localStorage:</strong> ${token || 'null'}</p>
-                        <p><strong>Token valid:</strong> ${token && token.startsWith('TOKEN_') ? 'Yes' : 'No'}</p>
-                        <p id="auth-status">Checking admin authentication...</p>
-                        <p><strong>Console logs:</strong> Check browser console (F12) for detailed logs</p>
-                        <button onclick="window.location.href='/goodbye'">Continue to Goodbye Page</button>
-                    </div>
-                `;
+                // Create safe DOM elements to prevent XSS
+                const container = document.createElement('div');
+                container.style.cssText = 'padding: 20px; font-family: Arial;';
                 
-                // Test the auth endpoint again and show result
-                fetch('/api/auth-check', { credentials: 'include' })
+                const title = document.createElement('h2');
+                title.textContent = 'Authentication Debug Info';
+                
+                const tokenInfo = document.createElement('p');
+                const tokenLabel = document.createElement('strong');
+                tokenLabel.textContent = 'Token from localStorage: ';
+                tokenInfo.appendChild(tokenLabel);
+                tokenInfo.appendChild(document.createTextNode(token || 'null'));
+                
+                const tokenValid = document.createElement('p');
+                const validLabel = document.createElement('strong');
+                validLabel.textContent = 'Token valid: ';
+                tokenValid.appendChild(validLabel);
+                tokenValid.appendChild(document.createTextNode(token && token.startsWith('TOKEN_') ? 'Yes' : 'No'));
+                
+                const authStatus = document.createElement('p');
+                authStatus.id = 'auth-status';
+                authStatus.textContent = 'Checking admin authentication...';
+                
+                const consoleInfo = document.createElement('p');
+                const consoleLabel = document.createElement('strong');
+                consoleLabel.textContent = 'Console logs: ';
+                consoleInfo.appendChild(consoleLabel);
+                consoleInfo.appendChild(document.createTextNode('Check browser console (F12) for detailed logs'));
+                
+                const button = document.createElement('button');
+                button.textContent = 'Continue to Goodbye Page';
+                button.onclick = function() { window.location.href = '/goodbye'; };
+                
+                container.appendChild(title);
+                container.appendChild(tokenInfo);
+                container.appendChild(tokenValid);
+                container.appendChild(authStatus);
+                container.appendChild(consoleInfo);
+                container.appendChild(button);
+                
+                document.body.innerHTML = '';
+                document.body.appendChild(container);
+                
+                // Test the auth endpoint again and show result - use absolute URL for cross-origin compatibility
+                const authCheckUrl = window.location.protocol + '//' + window.location.host + '/api/auth-check';
+                fetch(authCheckUrl, { credentials: 'include' })
                     .then(response => response.json())
                     .then(data => {
-                        document.getElementById('auth-status').innerHTML = 
-                            `<strong>Admin authentication result:</strong> ${data.authenticated ? 'AUTHENTICATED' : 'NOT AUTHENTICATED'}`;
+                        const statusElement = document.getElementById('auth-status');
+                        const statusLabel = document.createElement('strong');
+                        statusLabel.textContent = 'Admin authentication result: ';
+                        statusElement.innerHTML = '';
+                        statusElement.appendChild(statusLabel);
+                        statusElement.appendChild(document.createTextNode(data.authenticated ? 'AUTHENTICATED' : 'NOT AUTHENTICATED'));
                     })
                     .catch(error => {
-                        document.getElementById('auth-status').innerHTML = 
-                            `<strong>Admin authentication error:</strong> ${error.message}`;
+                        const statusElement = document.getElementById('auth-status');
+                        const statusLabel = document.createElement('strong');
+                        statusLabel.textContent = 'Admin authentication error: ';
+                        statusElement.innerHTML = '';
+                        statusElement.appendChild(statusLabel);
+                        statusElement.appendChild(document.createTextNode(error.message));
                     });
             }
         });

@@ -123,17 +123,26 @@ func corsMiddleware(next http.Handler) http.Handler {
 		origin := r.Header.Get("Origin")
 
 		// Always allow localhost and 127.0.0.1 regardless of mode
-		if origin == "http://localhost:8080" || origin == "http://127.0.0.1:8080" ||
-			origin == "https://localhost:8080" || origin == "https://127.0.0.1:8080" {
-			w.Header().Set("Access-Control-Allow-Origin", origin)
-		} else if config.Remote() {
-			// In remote mode, allow any origin for cross-device access
-			w.Header().Set("Access-Control-Allow-Origin", "*")
-		} else {
-			// For local mode, use secure origin validation
-			if origin != "" && isAllowedLocalOrigin(origin) {
-				w.Header().Set("Access-Control-Allow-Origin", origin)
+		// Use flexible pattern matching for any port
+		if origin != "" {
+			originURL, err := url.Parse(origin)
+			if err == nil {
+				hostname := originURL.Hostname()
+				if hostname == "localhost" || hostname == "127.0.0.1" {
+					w.Header().Set("Access-Control-Allow-Origin", origin)
+				} else if config.Remote() {
+					// In remote mode, allow any origin for cross-device access
+					w.Header().Set("Access-Control-Allow-Origin", "*")
+				} else {
+					// For local mode, use secure origin validation
+					if isAllowedLocalOrigin(origin) {
+						w.Header().Set("Access-Control-Allow-Origin", origin)
+					}
+				}
 			}
+		} else if config.Remote() {
+			// Fallback for remote mode when no origin header
+			w.Header().Set("Access-Control-Allow-Origin", "*")
 		}
 
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")

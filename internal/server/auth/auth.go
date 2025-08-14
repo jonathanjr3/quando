@@ -190,7 +190,9 @@ func HandleAuthCheck(w http.ResponseWriter, r *http.Request) {
 		"authenticated": IsAuthenticated(r),
 	}
 
-	json.NewEncoder(w).Encode(result)
+	if err := json.NewEncoder(w).Encode(result); err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
 }
 
 // UpdateAdminPassword updates the admin password
