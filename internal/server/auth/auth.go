@@ -97,12 +97,12 @@ func GetOrCreateAdminCredentials() (AdminCredentials, error) {
 		}
 
 		// IMPORTANT: Inform the user of the initial password
-		fmt.Printf("\n" + strings.Repeat("=", 60) + "\n")
+		fmt.Printf("%s", "\n" + strings.Repeat("=", 60) + "\n")
 		fmt.Printf("🔐 FIRST TIME SETUP - ADMIN CREDENTIALS CREATED\n")
 		fmt.Printf("   Username: admin\n")
 		fmt.Printf("   Password: %s\n", initialPassword)
 		fmt.Printf("   ⚠️  IMPORTANT: Save this password! Change it in the admin dashboard.\n")
-		fmt.Printf(strings.Repeat("=", 60) + "\n\n")
+		fmt.Printf("%s", strings.Repeat("=", 60) + "\n\n")
 
 		return creds, nil
 	}

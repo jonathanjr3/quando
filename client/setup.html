@@ -1,7 +1,221 @@
 <html>
 <head>
-    <title>Setup Client</title>
+    <title>Quando - Script Selection</title>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="/favicon.ico">
+    <style>
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            text-align: center; 
+            padding-top: 5vh; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background-attachment: fixed;
+            color: white; 
+            margin: 0;
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 2em;
+        }
+        
+        h1 { 
+            font-weight: 300; 
+            font-size: 2.5em;
+            margin-bottom: 0.5em;
+        }
+        
+        .subtitle {
+            font-size: 1.2em;
+            margin-bottom: 2em;
+            opacity: 0.9;
+        }
+        
+        .disconnect-btn {
+            background: rgba(255,255,255,0.15);
+            color: white;
+            border: 2px solid rgba(255,255,255,0.3);
+            padding: 12px 24px;
+            border-radius: 25px;
+            font-size: 1em;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+            margin-bottom: 2em;
+        }
+        
+        .disconnect-btn:hover {
+            background: rgba(255,255,255,0.25);
+            border-color: rgba(255,255,255,0.5);
+            transform: translateY(-2px);
+        }
+        
+        #script-container {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            display: block;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.2);
+            margin-bottom: 2em;
+            width: calc(100% - 40px);
+            max-width: 400px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        
+        .loading-message {
+            color: #666;
+            font-size: 1.1em;
+        }
+        
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .script-grid {
+            display: none;
+            grid-template-columns: 1fr;
+            gap: 15px;
+            color: #333;
+        }
+        
+        .script-card {
+            background: #f8f9fa;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            padding: 12px 15px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-align: center;
+            width: 100%;
+            box-sizing: border-box;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+        
+        .script-card:hover {
+            border-color: #667eea;
+            background: #fff;
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.15);
+        }
+        
+        .script-icon {
+            font-size: 1.5em;
+            opacity: 0.7;
+            flex-shrink: 0;
+        }
+        
+        .script-name {
+            font-size: 1em;
+            font-weight: 600;
+            color: #333;
+            word-break: break-word;
+            margin: 0;
+        }
+        
+        .error-message, .no-scripts {
+            padding: 20px;
+            font-size: 1.1em;
+            color: #666;
+            background: #f8f9fa;
+            border-radius: 10px;
+            border: 2px solid #dee2e6;
+        }
+        
+        .no-scripts {
+            border-color: #ffc107;
+            background: #fff8e1;
+            color: #856404;
+        }
+        
+        .error-message {
+            border-color: #dc3545;
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .error-card {
+            background: white;
+            padding: 40px;
+            border-radius: 15px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.2);
+            color: #333;
+            max-width: 500px;
+            margin: 50px auto;
+        }
+        
+        .error-icon {
+            font-size: 4em;
+            margin-bottom: 20px;
+            opacity: 0.7;
+        }
+        
+        .error-card h1 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 2em;
+            font-weight: 300;
+        }
+        
+        .error-card p {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 1.1em;
+            line-height: 1.6;
+        }
+        
+        .btn {
+            display: inline-block;
+            padding: 12px 30px;
+            text-decoration: none;
+            border-radius: 25px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            font-size: 1em;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border: 2px solid transparent;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
+        }
+        
+        @media (max-width: 768px) {
+            h1 { font-size: 2em; }
+            .container { padding: 1em; }
+            .script-grid { grid-template-columns: 1fr; }
+            #script-container {
+                padding: 20px;
+                width: calc(100% - 20px);
+            }
+            .script-card {
+                padding: 10px 12px;
+                gap: 8px;
+            }
+        }
+    </style>
     <script type="text/javascript">
         function onload() {
             // Try to get token from URL first, then from localStorage
@@ -17,27 +231,51 @@
             }
 
             if (!token || !token.startsWith('TOKEN_')) {
-                document.body.innerHTML = '<h1>Unauthorized</h1><p>No valid session found. Please <a href="/join">pair your device</a> first.</p>';
+                document.body.innerHTML = `
+                    <div class="container">
+                        <div class="error-card">
+                            <div class="error-icon">🔒</div>
+                            <h1>Unauthorized Access</h1>
+                            <p>No valid session found. Please pair your device first to continue.</p>
+                            <a href="/join" class="btn btn-primary">Go to Pairing Page</a>
+                        </div>
+                    </div>
+                `;
                 return;
             }
 
             fetch(`/scripts?token=${encodeURIComponent(token)}`).then((res) => res.json()).then(
                 (response) => {
+                    // Hide loading message
+                    document.getElementById("loading").style.display = 'none';
+                    
                     if (response.success) {
-                        var list = document.getElementById("list_js");
+                        var list = document.getElementById("script-grid");
                         list.innerHTML = '';
                         var result = '';
                         for(var i=0; i<response.files.length; i++) {
-                            result += '<button onclick="setJs(\'' + response.files[i] + '\');">' + response.files[i] + '</button><br/>';
+                            result += `
+                                <div class="script-card" onclick="setJs('${response.files[i]}');">
+                                    <div class="script-icon">📄</div>
+                                    <div class="script-name">${response.files[i]}</div>
+                                </div>
+                            `;
+                        }
+                        if (response.files.length === 0) {
+                            result = '<div class="no-scripts">No scripts available. Please check with your administrator.</div>';
                         }
                         list.innerHTML = result;
+                        list.style.display = 'grid';
                     } else {
-                        document.getElementById("list_js").innerHTML = 'Error loading scripts: ' + (response.message || 'Unknown error');
+                        document.getElementById("script-grid").innerHTML = '<div class="error-message">Error loading scripts: ' + (response.message || 'Unknown error') + '</div>';
+                        document.getElementById("script-grid").style.display = 'block';
                     }
                 }
             ).catch(error => {
                 console.error('Error fetching scripts:', error);
-                document.getElementById("list_js").innerHTML = 'Error loading scripts. Please check your connection.';
+                document.getElementById("loading").style.display = 'none';
+                document.getElementById("script-grid").innerHTML = '<div class="error-message">Error loading scripts. Please check your connection.</div>';
+                document.getElementById("script-grid").style.display = 'block';
             });
         }
         function setJs(name) {
@@ -120,17 +358,27 @@
             }
         }
     </script>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="icon" href="/favicon.ico">
-    <link rel="stylesheet" href="setup.css">
 </head>
 
 <body onload="onload();">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-        <div>Choose script to execute by default:</div>
-        <button onclick="disconnect()" style="background: #ff4444; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;">Disconnect</button>
+    <div class="container">
+        <h1>🎭 Script Selection</h1>
+        <div class="subtitle">Choose a script to run on your device</div>
+        
+        <button onclick="disconnect()" class="disconnect-btn">
+            <span>🔌</span>
+            Disconnect Device
+        </button>
+        
+        <div id="script-container">
+            <div class="loading-message" id="loading">
+                <div class="spinner"></div>
+                <p>Loading available scripts...</p>
+            </div>
+            
+            <div id='script-grid' class="script-grid"></div>
+        </div>
     </div>
-    <div id='list_js'>Loading...</div>
 </body>
 
 </html>

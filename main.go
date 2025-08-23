@@ -16,6 +16,10 @@ func main() {
 	if config.Remote() {
 		fmt.Println("**SECURITY WARNING** Quando can be accessed remotely at ", ipAddress)
 	}
-	server.ServeHTTPandIO(handlers)
+
+	// Run server in background goroutine
+	go server.ServeHTTPandIO(handlers)
+
+	// Run system tray on main thread (required by systray)
 	tray.Run()
 }

@@ -5,14 +5,12 @@ package tray
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"os/signal"
 	"quando/internal/icon"
 	"quando/internal/server"
 
 	"fyne.io/systray"
 	"github.com/skratchdot/open-golang/open"
-	"github.com/zserge/lorca"
 )
 
 func Run() {
@@ -20,15 +18,21 @@ func Run() {
 }
 
 func setup() {
+	fmt.Println("Setting up system tray...")
+
 	// handle OS interrupt
 	interrupt_channel := make(chan os.Signal, 1)
 	signal.Notify(interrupt_channel, os.Interrupt)
 	go handleInterrupt(interrupt_channel)
 
+	// Check if we can set icon
+	iconData := icon.Data()
+
 	// setup menu
-	systray.SetIcon(icon.Data())
+	systray.SetIcon(iconData)
 	systray.SetTitle("Quando")
 	systray.SetTooltip("Quando - noCode Toolset")
+
 	sysEditor := systray.AddMenuItem("Editor", "Open Editor")
 	sysClient := systray.AddMenuItem("Client", "Open Client")
 	systray.AddSeparator()
@@ -37,6 +41,7 @@ func setup() {
 	sysGithub := systray.AddMenuItem("Quando:Github", "Open Quando -> Github")
 	systray.AddSeparator()
 	sysQuit := systray.AddMenuItem("Quit", "Stop the server")
+
 	// Handle Clicks
 	go func() {
 		for {
@@ -44,13 +49,13 @@ func setup() {
 			case <-sysQuit.ClickedCh:
 				systray.Quit()
 			case <-sysEditor.ClickedCh:
-				openChrome("/editor")
+				openDefaultBrowser("/editor")
 			case <-sysClient.ClickedCh:
-				openChrome("/client")
+				openDefaultBrowser("/client")
 			case <-sysDashboard.ClickedCh:
-				openChrome("")
+				openDefaultBrowser("/admin")
 			case <-sysGithub.ClickedCh:
-				open.Start("https://github.com/andrewfstratton/quando")
+				open.Start("https://github.com/jonathanjr3/quando")
 			}
 		}
 	}()
@@ -62,12 +67,11 @@ func handleInterrupt(interrupt chan os.Signal) {
 	systray.Quit()
 }
 
-func openChrome(suffix string) {
-	loc := lorca.LocateChrome()
-	cmd := exec.Command(loc, "--new-window", "--user-data-dir=C:\\chrome_dir", "--allow-insecure-localhost", "http://127.0.0.1"+server.Port()+suffix)
-	err := cmd.Start()
+func openDefaultBrowser(suffix string) {
+	url := "http://127.0.0.1" + server.Port() + suffix
+	err := open.Start(url)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Printf("Failed to open URL in default browser: %v\n", err)
 	}
 }
 

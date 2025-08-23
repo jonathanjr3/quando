@@ -179,6 +179,12 @@
                     <li><span>IP Address:</span> <span id="server-ip">Loading...</span></li>
                     <li><span>Remote Access:</span> <span id="remote-status">Loading...</span></li>
                 </ul>
+                <div style="margin-top: 1em; padding: 1em; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #667eea;">
+                    <small style="color: #666;">
+                        <strong>💡 Tip:</strong> To enable remote access, start the server with <code>--remote</code> flag.<br>
+                        Example: <code>./quando --remote</code> or <code>go run . --remote</code>
+                    </small>
+                </div>
                 <button class="btn btn-secondary" onclick="refreshSystemInfo()">Refresh Info</button>
             </div>
 
@@ -197,17 +203,6 @@
                 </div>
                 <button class="btn" onclick="updatePairingConfig()">Update Configuration</button>
                 <div id="config-status" style="margin-top: 1em; font-size: 0.9em;"></div>
-            </div>
-
-            <div class="card">
-                <h3><span class="card-icon">🔧</span>Quick Actions</h3>
-                <p>Common administrative tasks and shortcuts.</p>
-                <a href="/client/" class="btn" target="_blank">Client Runtime</a>
-                <button class="btn btn-secondary" onclick="generateClientQR()">Client QR</button>
-                <div id="client-qrcode" class="qr-container" style="display: none;">
-                    <div class="qr-code"></div>
-                    <p>Scan to access client runtime</p>
-                </div>
             </div>
         </div>
     </div>
@@ -284,10 +279,6 @@
 
         function generateEditorQR() {
             generateQR('editor-qrcode', '/editor/');
-        }
-
-        function generateClientQR() {
-            generateQR('client-qrcode', '/client/');
         }
 
         // Password management functions
