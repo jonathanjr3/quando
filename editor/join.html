@@ -87,20 +87,20 @@
 </head>
 <body>
     <div class="container">
-        <h1>📱 Scan to Connect</h1>
-        <div class="subtitle">Connect your mobile device to this Quando session</div>
+        <h1>� Secure Device Pairing</h1>
+        <div class="subtitle">Establish a cryptographically secure connection to this Quando session</div>
         
         <div id="qr-container">
             <div id="qrcode"></div>
         </div>
         
-        <div id="sas-container">Waiting for connection...</div>
-        <div class="status" id="status">Ready to pair</div>
+        <div id="sas-container">Waiting for secure connection...</div>
+        <div class="status" id="status">Ready for secure pairing</div>
         
         <div class="instructions">
             <div class="step">1️⃣ Scan the QR code with your mobile device</div>
-            <div class="step">2️⃣ Tap "Pair" on your device</div>
-            <div class="step">3️⃣ Enter the 6-digit code that appears above</div>
+            <div class="step">2️⃣ Tap "Start Secure Pairing" on your device</div>
+            <div class="step">3️⃣ Verify the 6-digit security code matches on both devices</div>
         </div>
     </div>
 
@@ -210,8 +210,10 @@
         function generateQRWithHost(host) {
             try {
                 qrContainer.innerHTML = ''; // Clear previous QR code
+                
+                // Generate QR code with URL (not JSON)
                 const joinUrl = `${window.location.protocol}//${host}/pair/${sessionId}`;
-                console.log('Generating QR code for:', joinUrl);
+                console.log('Generating QR code for URL:', joinUrl);
                 
                 const qr = new QRCode(qrContainer, {
                     text: joinUrl,
@@ -256,24 +258,24 @@
                     switch(data.type) {
                         case 'show_sas':
                             sasContainer.textContent = data.sas;
-                            statusElement.textContent = 'Enter this code on your mobile device';
+                            statusElement.textContent = 'Verify this security code matches on your device';
                             break;
                         case 'pairing_complete':
-                            sasContainer.textContent = "✅ PAIRED!";
-                            statusElement.textContent = 'Device successfully connected';
+                            sasContainer.textContent = "🔐 SECURE CONNECTION ESTABLISHED!";
+                            statusElement.textContent = 'Device successfully connected with cryptographic security';
                             // Hide QR code when device is paired
                             qrContainerWrapper.style.display = 'none';
                             break;
                         case 'client_disconnected':
-                            sasContainer.textContent = "📱 Ready to pair";
-                            statusElement.textContent = 'Device disconnected - ready for new pairing';
+                            sasContainer.textContent = "� Ready for secure pairing";
+                            statusElement.textContent = 'Device disconnected - ready for new secure connection';
                             // Show QR code again when device disconnects
                             qrContainerWrapper.style.display = 'inline-block';
                             // Don't need to restart - same session can be reused
                             break;
                         case 'session_invalidated':
-                            sasContainer.textContent = "🔄 Creating new session...";
-                            statusElement.textContent = 'Session invalidated - creating new pairing session';
+                            sasContainer.textContent = "🔄 Creating new secure session...";
+                            statusElement.textContent = 'Session invalidated - creating new secure pairing session';
                             // Show QR code for new session
                             qrContainerWrapper.style.display = 'inline-block';
                             // Generate new session and restart

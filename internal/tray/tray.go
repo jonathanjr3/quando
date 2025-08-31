@@ -51,7 +51,7 @@ func setup() {
 			case <-sysEditor.ClickedCh:
 				openDefaultBrowser("/editor")
 			case <-sysClient.ClickedCh:
-				openDefaultBrowser("/client")
+				openDefaultBrowser("/join")
 			case <-sysDashboard.ClickedCh:
 				openDefaultBrowser("/admin")
 			case <-sysGithub.ClickedCh:

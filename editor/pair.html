@@ -152,19 +152,19 @@
 </head>
 <body>
     <div class="container">
-        <h1>🔗 Pair Device</h1>
+        <h1>� Secure Device Pairing</h1>
         
         <div class="card">
             <div id="init-view">
-                <p>Ready to connect to the Quando session?</p>
-                <button id="pair-button">Start Pairing</button>
+                <p>Ready to establish a secure cryptographic connection?</p>
+                <button id="pair-button">Start Secure Pairing</button>
             </div>
 
             <form id="sas-form">
-                <p>Enter the 6-digit code shown on the main screen:</p>
+                <p>Enter the 6-digit security code displayed on the main screen:</p>
                 <input type="text" id="sas-input" maxlength="6" pattern="[0-9]{6}" required 
-                       placeholder="000000" inputmode="numeric">
-                <button type="submit" id="connect-button">Connect</button>
+                       placeholder="Enter code" inputmode="numeric">
+                <button type="submit" id="connect-button">Verify & Connect</button>
             </form>
             
             <div class="loading" id="loading">
@@ -179,7 +179,133 @@
     </div>
 
     <script>
-        const sessionId = window.location.pathname.split('/')[2];
+        // Parse session info from URL
+        let sessionId = window.location.pathname.split('/')[2];
+        let serverPublicKey = null;
+        let clientPrivateKey = null;
+        let clientPublicKey = null;
+        let sharedSecret = null;
+        let derivedSAS = null;
+        
+        // Fetch session info from server API
+        async function fetchSessionInfo() {
+            try {
+                console.log('Fetching session info for:', sessionId);
+                const response = await fetch(`/api/session/${sessionId}/info`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const sessionInfo = await response.json();
+                if (sessionInfo.sessionId && sessionInfo.serverPublicKey) {
+                    serverPublicKey = sessionInfo.serverPublicKey;
+                    console.log('Successfully fetched session info with crypto support');
+                    return true;
+                } else {
+                    console.warn('Session info missing required fields');
+                    return false;
+                }
+            } catch (error) {
+                console.error('Error fetching session info:', error);
+                return false;
+            }
+        }
+        
+        // Crypto utility functions using WebCrypto API with P-256 (universally supported)
+        async function generateP256KeyPair() {
+            try {
+                const keyPair = await window.crypto.subtle.generateKey(
+                    {
+                        name: "ECDH",
+                        namedCurve: "P-256"
+                    },
+                    true,
+                    ["deriveKey", "deriveBits"]
+                );
+                
+                clientPrivateKey = keyPair.privateKey;
+                
+                // Export public key as raw bytes
+                const publicKeyBytes = await window.crypto.subtle.exportKey("raw", keyPair.publicKey);
+                clientPublicKey = new Uint8Array(publicKeyBytes);
+                
+                console.log('Generated client P-256 ECDH key pair');
+                return true;
+            } catch (error) {
+                console.error('Failed to generate P-256 ECDH key pair:', error);
+                return false;
+            }
+        }
+        
+        async function deriveSharedSecret() {
+            try {
+                // Import server public key
+                const serverKeyBytes = Uint8Array.from(atob(serverPublicKey), c => c.charCodeAt(0));
+                const serverKey = await window.crypto.subtle.importKey(
+                    "raw",
+                    serverKeyBytes,
+                    {
+                        name: "ECDH",
+                        namedCurve: "P-256"
+                    },
+                    false,
+                    []
+                );
+                
+                // Derive shared secret
+                const sharedSecretBits = await window.crypto.subtle.deriveBits(
+                    {
+                        name: "ECDH",
+                        public: serverKey
+                    },
+                    clientPrivateKey,
+                    256 // 32 bytes
+                );
+                
+                sharedSecret = new Uint8Array(sharedSecretBits);
+                console.log('Derived shared secret using P-256 ECDH');
+                return true;
+            } catch (error) {
+                console.error('Failed to derive shared secret:', error);
+                return false;
+            }
+        }
+        
+        async function deriveCryptoSAS() {
+            try {
+                // Import shared secret as HMAC key
+                const hmacKey = await window.crypto.subtle.importKey(
+                    "raw",
+                    sharedSecret,
+                    {
+                        name: "HMAC",
+                        hash: "SHA-256"
+                    },
+                    false,
+                    ["sign"]
+                );
+                
+                // Derive SAS using HMAC-SHA256
+                const sasDerivationData = new TextEncoder().encode("SAS_DERIVATION");
+                const hmacResult = await window.crypto.subtle.sign("HMAC", hmacKey, sasDerivationData);
+                const hmacBytes = new Uint8Array(hmacResult);
+                
+                // Convert first 4 bytes to uint32 (same as server)
+                const sasValue32 = (hmacBytes[0] << 24) | (hmacBytes[1] << 16) | (hmacBytes[2] << 8) | hmacBytes[3];
+                // Truncate to 20 bits and map to 6-digit range (same as server)
+                const sasValue = sasValue32 & 0xFFFFF; // 20 bits
+                const sasNumber = (sasValue % 900000) + 100000; // Map to 100000-999999
+                derivedSAS = sasNumber.toString().padStart(6, '0');
+                
+                console.log('Derived cryptographic SAS:', derivedSAS);
+                return true;
+            } catch (error) {
+                console.error('Failed to derive cryptographic SAS:', error);
+                return false;
+            }
+        }
+        
         const pairButton = document.getElementById('pair-button');
         const sasForm = document.getElementById('sas-form');
         const initView = document.getElementById('init-view');
@@ -228,31 +354,48 @@
                     const data = JSON.parse(event.data);
                     
                     switch(data.type) {
-                        case 'prompt_for_sas':
-                            initView.style.display = 'none';
-                            sasForm.style.display = 'block';
-                            loadingDiv.style.display = 'none';
-                            updateStatus('Enter the code from the main screen');
-                            sasInput.focus();
+                        case 'key_exchange_complete':
+                            // Server has received our public key and computed shared secret
+                            console.log('Key exchange completed on server side');
+                            break;
+                            
+                        case 'sas_ready':
+                            // Server has derived SAS and is ready for verification
+                            console.log('Server SAS ready for verification');
                             break;
                             
                         case 'pairing_success':
                             localStorage.setItem('quando-session-token', data.token);
-                            updateStatus('Pairing successful! Redirecting...');
+                            updateStatus('Secure pairing successful! Redirecting...');
                             loadingDiv.style.display = 'block';
                             sasForm.style.display = 'none';
                             
-                            // Redirect to client page after a short delay, passing token in URL
+                            // Redirect to client page after a short delay
                             setTimeout(() => {
                                 window.location.href = `/client/setup.html?token=${encodeURIComponent(data.token)}`;
                             }, 2000);
                             break;
                             
                         case 'pairing_failed':
-                            showError('Incorrect code. Please check the code on the main screen and try again.');
+                            showError('Cryptographic verification failed. Please check the code on the main screen and try again.');
                             sasForm.style.display = 'none';
                             initView.style.display = 'block';
-                            updateStatus('Pairing failed - try again');
+                            updateStatus('Secure pairing failed - try again');
+                            break;
+                            
+                        case 'rate_limited':
+                            const waitTime = data.waitTime || 1;
+                            showError(`Too many attempts. Please wait ${waitTime} seconds before trying again.`);
+                            setTimeout(() => {
+                                hideError();
+                                sasForm.style.display = 'none';
+                                initView.style.display = 'block';
+                                updateStatus('Ready to try again');
+                            }, waitTime * 1000);
+                            break;
+                            
+                        default:
+                            console.warn('Unknown message type:', data.type);
                             break;
                     }
                 } catch (error) {
@@ -275,17 +418,117 @@
         }
 
         // Event listeners
-        pairButton.addEventListener('click', () => {
+        pairButton.addEventListener('click', async () => {
             if (ws && ws.readyState === WebSocket.OPEN) {
                 hideError();
                 loadingDiv.style.display = 'block';
                 initView.style.display = 'none';
-                updateStatus('Initiating pairing...');
+                updateStatus('Fetching session info...');
                 
+                // Fetch session info for cryptographic pairing
+                if (!(await fetchSessionInfo())) {
+                    showError('Failed to fetch session information. Please try again.');
+                    loadingDiv.style.display = 'none';
+                    initView.style.display = 'block';
+                    return;
+                }
+                
+                // Check for WebCrypto API support with detailed logging
+                console.log('WebCrypto detection:');
+                console.log('window.crypto exists:', !!window.crypto);
+                console.log('window.crypto.subtle exists:', !!(window.crypto && window.crypto.subtle));
+                console.log('isSecureContext:', window.isSecureContext);
+                console.log('location.protocol:', window.location.protocol);
+                console.log('User agent:', navigator.userAgent);
+                
+                // Check for secure context first
+                if (!window.isSecureContext && window.location.protocol !== 'https:' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+                    showError('WebCrypto requires a secure context (HTTPS) for remote access. Please access this page via HTTPS.');
+                    loadingDiv.style.display = 'none';
+                    initView.style.display = 'block';
+                    return;
+                }
+                
+                if (!window.crypto) {
+                    showError('WebCrypto API not available: window.crypto is missing. This should not happen on modern browsers.');
+                    loadingDiv.style.display = 'none';
+                    initView.style.display = 'block';
+                    return;
+                }
+                
+                if (!window.crypto.subtle) {
+                    showError('WebCrypto SubtleCrypto not available: window.crypto.subtle is missing. This may be due to an insecure context (non-HTTPS).');
+                    loadingDiv.style.display = 'none';
+                    initView.style.display = 'block';
+                    return;
+                }
+                
+                console.log('WebCrypto API is available, testing P-256 support...');
+                
+                // Test P-256 support specifically
+                try {
+                    const testKey = await window.crypto.subtle.generateKey(
+                        { name: "ECDH", namedCurve: "P-256" },
+                        false,
+                        ["deriveKey", "deriveBits"]
+                    );
+                    console.log('P-256 ECDH support confirmed:', testKey);
+                } catch (testError) {
+                    console.error('P-256 test failed:', testError);
+                    showError(`Your browser does not support P-256 ECDH: ${testError.message}. Please update your browser or try a different one.`);
+                    loadingDiv.style.display = 'none';
+                    initView.style.display = 'block';
+                    return;
+                }
+                
+                // Generate client key pair for cryptographic pairing
+                updateStatus('Generating cryptographic keys...');
+                if (!(await generateP256KeyPair())) {
+                    showError('Failed to generate cryptographic keys');
+                    loadingDiv.style.display = 'none';
+                    initView.style.display = 'block';
+                    return;
+                }
+                
+                // Send client public key for key exchange
+                updateStatus('Performing key exchange...');
+                const clientPublicKeyB64 = btoa(String.fromCharCode(...clientPublicKey));
                 ws.send(JSON.stringify({ 
-                    type: 'initiate_pairing', 
-                    sessionId: sessionId 
+                    type: 'client_key_exchange', 
+                    sessionId: sessionId,
+                    clientPublicKey: clientPublicKeyB64
                 }));
+                
+                // Derive shared secret and SAS
+                updateStatus('Deriving shared secret...');
+                if (!(await deriveSharedSecret())) {
+                    showError('Failed to derive shared secret');
+                    loadingDiv.style.display = 'none';
+                    initView.style.display = 'block';
+                    return;
+                }
+                
+                if (!(await deriveCryptoSAS())) {
+                    showError('Failed to derive security code');
+                    loadingDiv.style.display = 'none';
+                    initView.style.display = 'block';
+                    return;
+                }
+                
+                // Show SAS input form for manual entry (proper SAS protocol)
+                updateStatus('Enter the 6-digit code shown on the main screen');
+                initView.style.display = 'none';
+                sasForm.style.display = 'block';
+                loadingDiv.style.display = 'none';
+                sasInput.value = '';  // Empty field - user must manually enter
+                sasInput.readOnly = false;
+                sasInput.style.background = '#ffffff';
+                sasInput.focus(); // Focus for immediate typing
+                
+                // Change button text for manual verification
+                const connectButton = document.getElementById('connect-button');
+                connectButton.textContent = 'Verify & Connect';
+                
             } else {
                 showError('Not connected. Please refresh the page and try again.');
             }
@@ -300,12 +543,19 @@
                 return;
             }
             
+            // Verify user-entered SAS matches cryptographically derived SAS
+            if (sas !== derivedSAS) {
+                showError('Security code does not match. Please check the code on the main screen and try again.');
+                return;
+            }
+            
             if (ws && ws.readyState === WebSocket.OPEN) {
                 hideError();
                 loadingDiv.style.display = 'block';
                 sasForm.style.display = 'none';
-                updateStatus('Verifying code...');
+                updateStatus('Verifying cryptographic code...');
                 
+                // Send cryptographic SAS verification
                 ws.send(JSON.stringify({ 
                     type: 'verify_sas', 
                     sessionId: sessionId, 
@@ -327,6 +577,7 @@
             showError('Invalid session. Please scan the QR code again.');
             updateStatus('Invalid session');
         } else {
+            updateStatus('Ready for secure pairing');
             // Initialize WebSocket connection
             connectWebSocket();
         }
