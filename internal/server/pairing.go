@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/binary"
 	"fmt"
@@ -39,6 +40,7 @@ type PairingSession struct {
 	ClientPublicKey  []byte // Client's P-256 public key
 	SharedSecret     []byte // ECDH shared secret
 	CryptoSAS        string // Cryptographically derived SAS
+	SASVerified      bool   // SAS matched; awaiting key confirmation
 
 	// Rate limiting fields
 	AttemptCount     int
@@ -106,11 +108,23 @@ func computeSharedSecret(privateKeyBytes, clientPublicKeyBytes []byte) ([]byte, 
 	return sharedSecret, nil
 }
 
-// deriveCryptoSAS derives a 6-digit SAS from shared secret using HMAC-SHA256
-func deriveCryptoSAS(sharedSecret []byte) string {
-	// Create HMAC-SHA256 with shared secret as key
+// deriveCryptoSAS derives a 6-digit SAS bound to the handshake transcript using HMAC-SHA256
+// Transcript: "quando-sas-v1\n" || sessionID || "\nserver\n" || serverPubKey || "\nclient\n" || clientPubKey
+func deriveCryptoSAS(sharedSecret []byte, sessionID string, serverPubKey, clientPubKey []byte) string {
+	// Build transcript
+	transcript := make([]byte, 0, 16+len(sessionID)+1+len(serverPubKey)+1+len(clientPubKey)+8)
+	transcript = append(transcript, []byte("quando-sas-v1\n")...)
+	transcript = append(transcript, []byte(sessionID)...)
+	transcript = append(transcript, '\n')
+	transcript = append(transcript, []byte("server\n")...)
+	transcript = append(transcript, serverPubKey...)
+	transcript = append(transcript, '\n')
+	transcript = append(transcript, []byte("client\n")...)
+	transcript = append(transcript, clientPubKey...)
+
+	// HMAC(sharedSecret, transcript)
 	h := hmac.New(sha256.New, sharedSecret)
-	h.Write([]byte("SAS_DERIVATION"))
+	h.Write(transcript)
 	mac := h.Sum(nil)
 
 	// Take first 4 bytes and convert to uint32
@@ -142,6 +156,22 @@ func verifyMessageAuthentication(sharedSecret []byte, message []byte, expectedHM
 	computedMAC := h.Sum(nil)
 
 	return hmac.Equal(computedMAC, expectedBytes)
+}
+
+// hmacEqualB64 compares two base64-encoded MACs in constant time
+func hmacEqualB64(aB64, bB64 string) bool {
+	a, err1 := base64.StdEncoding.DecodeString(aB64)
+	if err1 != nil {
+		return false
+	}
+	b, err2 := base64.StdEncoding.DecodeString(bB64)
+	if err2 != nil {
+		return false
+	}
+	if len(a) != len(b) {
+		return false
+	}
+	return subtle.ConstantTimeCompare(a, b) == 1
 }
 
 // ValidateToken checks if a pairing token is valid and authenticated
@@ -474,8 +504,8 @@ func (sm *SessionManager) handlePairingMessage(sessionID string, msg map[string]
 			}
 			session.SharedSecret = sharedSecret
 
-			// Derive cryptographic SAS
-			session.CryptoSAS = deriveCryptoSAS(sharedSecret)
+			// Derive cryptographic SAS bound to transcript (session, roles, keys)
+			session.CryptoSAS = deriveCryptoSAS(sharedSecret, sessionID, session.ServerPublicKey, session.ClientPublicKey)
 			session.State = ReadyForSAS
 
 			// Send SAS to display
@@ -519,36 +549,20 @@ func (sm *SessionManager) handlePairingMessage(sessionID string, msg map[string]
 			session.LastAttempt = now
 
 			if providedSAS == session.CryptoSAS {
-				// Success - generate authenticated token
-				session.State = Paired
+				// SAS matched; request key confirmation before pairing
+				session.SASVerified = true
 
-				// Create token with HMAC authentication
-				tokenData := fmt.Sprintf("TOKEN_%s_%d", sessionID, time.Now().Unix())
-				tokenHMAC := authenticateMessage(session.SharedSecret, []byte(tokenData))
-				authenticatedToken := fmt.Sprintf("%s.%s", tokenData, tokenHMAC)
-
-				// Send success to client
-				successMsg := map[string]string{
-					"type":  "pairing_success",
-					"token": authenticatedToken,
+				// Prompt client to send key confirmation HMAC
+				confirmReq := map[string]string{
+					"type": "request_key_confirm",
 				}
-				websocket.JSON.Send(session.ClientConn, successMsg)
+				websocket.JSON.Send(session.ClientConn, confirmReq)
 
-				// Update display
+				// Update display status
 				displayMsg := map[string]string{
-					"type": "pairing_complete",
+					"type": "sas_verified_wait_confirm",
 				}
 				websocket.JSON.Send(session.DisplayConn, displayMsg)
-
-				fmt.Printf("Pairing successful for session %s\n", sessionID)
-
-				// Reset expiry timer to 10 minutes for active session
-				if session.ExpiryTimer != nil {
-					session.ExpiryTimer.Stop()
-				}
-				session.ExpiryTimer = time.AfterFunc(GetSessionExpiryDuration(), func() {
-					sm.CleanupSession(sessionID)
-				})
 			} else {
 				// Failed attempt - implement exponential backoff
 				backoffSeconds := 1 << (session.AttemptCount - 1) // 1, 2, 4, 8, 16 seconds
@@ -588,6 +602,53 @@ func (sm *SessionManager) handlePairingMessage(sessionID string, msg map[string]
 					fmt.Printf("Pairing failed for session %s (wrong SAS), attempt %d/5\n",
 						sessionID, session.AttemptCount)
 				}
+			}
+		}
+
+	case "key_confirm":
+		// Client sends HMAC confirmation after SAS success
+		if session.SASVerified && session.State == ReadyForSAS {
+			confStr, ok := msg["confirm"].(string)
+			if !ok {
+				return
+			}
+			// Expected HMAC over "confirm:" || sessionID using shared secret
+			expected := authenticateMessage(session.SharedSecret, []byte("confirm:"+sessionID))
+			if hmacEqualB64(expected, confStr) {
+				// Mark paired and issue token
+				session.State = Paired
+
+				tokenData := fmt.Sprintf("TOKEN_%s_%d", sessionID, time.Now().Unix())
+				tokenHMAC := authenticateMessage(session.SharedSecret, []byte(tokenData))
+				authenticatedToken := fmt.Sprintf("%s.%s", tokenData, tokenHMAC)
+
+				successMsg := map[string]string{
+					"type":  "pairing_success",
+					"token": authenticatedToken,
+				}
+				websocket.JSON.Send(session.ClientConn, successMsg)
+
+				displayMsg := map[string]string{
+					"type": "pairing_complete",
+				}
+				websocket.JSON.Send(session.DisplayConn, displayMsg)
+
+				fmt.Printf("Pairing successful (key confirmed) for session %s\n", sessionID)
+
+				if session.ExpiryTimer != nil {
+					session.ExpiryTimer.Stop()
+				}
+				session.ExpiryTimer = time.AfterFunc(GetSessionExpiryDuration(), func() {
+					sm.CleanupSession(sessionID)
+				})
+			} else {
+				// Fail pairing on bad confirmation
+				failMsg := map[string]string{
+					"type":   "pairing_failed",
+					"reason": "bad_key_confirmation",
+				}
+				websocket.JSON.Send(session.ClientConn, failMsg)
+				fmt.Printf("Session %s key confirmation failed\n", sessionID)
 			}
 		}
 

@@ -270,13 +270,34 @@
         
         function deriveCryptoSAS() {
             try {
-                // Convert shared secret to CryptoJS WordArray
-                const sharedSecretWords = CryptoJS.lib.WordArray.create(sharedSecret);
-                
-                // Derive SAS using HMAC-SHA256
-                const sasDerivationData = CryptoJS.enc.Utf8.parse("SAS_DERIVATION");
-                const hmacResult = CryptoJS.HmacSHA256(sasDerivationData, sharedSecretWords);
-                
+                // Build transcript: "quando-sas-v1\n" || sessionId || "\nserver\n" || serverPubKey || "\nclient\n" || clientPubKey
+                const enc = new TextEncoder();
+                const prefix = enc.encode('quando-sas-v1\n');
+                const sid = enc.encode(sessionId);
+                const nl = new Uint8Array([10]);
+                const roleServer = enc.encode('server\n');
+                const roleClient = enc.encode('client\n');
+                const serverKeyBytes = Uint8Array.from(atob(serverPublicKey), c => c.charCodeAt(0));
+                const clientKeyBytes = clientPublicKey; // already Uint8Array (65 bytes)
+
+                const transcript = new Uint8Array(
+                    prefix.length + sid.length + 1 + roleServer.length + serverKeyBytes.length + 1 + roleClient.length + clientKeyBytes.length
+                );
+                let off = 0;
+                transcript.set(prefix, off); off += prefix.length;
+                transcript.set(sid, off); off += sid.length;
+                transcript.set(nl, off); off += 1;
+                transcript.set(roleServer, off); off += roleServer.length;
+                transcript.set(serverKeyBytes, off); off += serverKeyBytes.length;
+                transcript.set(nl, off); off += 1;
+                transcript.set(roleClient, off); off += roleClient.length;
+                transcript.set(clientKeyBytes, off);
+
+                // Convert to CryptoJS types
+                const keyWA = CryptoJS.lib.WordArray.create(sharedSecret);
+                const dataWA = CryptoJS.lib.WordArray.create(transcript);
+                const hmacResult = CryptoJS.HmacSHA256(dataWA, keyWA);
+
                 // Convert to bytes array
                 const hmacBytes = [];
                 for (let i = 0; i < hmacResult.words.length; i++) {
@@ -286,15 +307,15 @@
                     hmacBytes.push((word >>> 8) & 0xff);
                     hmacBytes.push(word & 0xff);
                 }
-                
+
                 // Convert first 4 bytes to uint32 (same as server)
                 const sasValue32 = (hmacBytes[0] << 24) | (hmacBytes[1] << 16) | (hmacBytes[2] << 8) | hmacBytes[3];
                 // Truncate to 20 bits and map to 6-digit range (same as server)
                 const sasValue = sasValue32 & 0xFFFFF; // 20 bits
                 const sasNumber = (sasValue % 900000) + 100000; // Map to 100000-999999
                 derivedSAS = sasNumber.toString().padStart(6, '0');
-                
-                console.log('Derived cryptographic SAS using pure JS crypto:', derivedSAS);
+
+                console.log('Derived transcript-bound SAS:', derivedSAS);
                 return true;
             } catch (error) {
                 console.error('Failed to derive cryptographic SAS:', error);
@@ -359,6 +380,34 @@
                             // Server has derived SAS and is ready for verification
                             console.log('Server SAS ready for verification');
                             break;
+                        
+                        case 'prompt_for_sas':
+                            // Server prompts for SAS entry (we already present UI once local SAS is derived)
+                            console.log('Prompted for SAS by server');
+                            updateStatus('Enter the 6-digit code shown on the main screen');
+                            break;
+
+                        case 'request_key_confirm':
+                            // After SAS verified, server requests HMAC confirmation proof of key possession
+                            console.log('Server requested key confirmation');
+                            try {
+                                const enc = new TextEncoder();
+                                const msgBytes = enc.encode('confirm:' + sessionId);
+                                const keyWA = CryptoJS.lib.WordArray.create(sharedSecret);
+                                const msgWA = CryptoJS.lib.WordArray.create(msgBytes);
+                                const mac = CryptoJS.HmacSHA256(msgWA, keyWA);
+                                const macB64 = CryptoJS.enc.Base64.stringify(mac);
+                                ws.send(JSON.stringify({
+                                    type: 'key_confirm',
+                                    sessionId: sessionId,
+                                    confirm: macB64,
+                                }));
+                                updateStatus('Confirming secure keys…');
+                            } catch (e) {
+                                console.error('Failed to compute/send key confirmation:', e);
+                                showError('Cryptographic error during key confirmation. Please try again.');
+                            }
+                            break;
                             
                         case 'pairing_success':
                             localStorage.setItem('quando-session-token', data.token);
@@ -388,6 +437,11 @@
                                 initView.style.display = 'block';
                                 updateStatus('Ready to try again');
                             }, waitTime * 1000);
+                            break;
+
+                        case 'sas_verified_wait_confirm':
+                            // Display informs that SAS matched and awaiting key confirmation
+                            updateStatus('Code accepted. Confirming secure keys…');
                             break;
                             
                         default:
