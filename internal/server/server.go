@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -257,8 +258,65 @@ func ServeHTTPandIO(handlers []Handler) {
 		http.ServeFile(w, r, "editor/js/qrcode.min.js")
 	})
 
+	// Public crypto libraries for pairing pages (no authentication required)
+	mux.HandleFunc("/client/extlib/elliptic.min.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/javascript")
+		http.ServeFile(w, r, "client/extlib/elliptic.min.js")
+	})
+	mux.HandleFunc("/client/extlib/crypto-js.min.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/javascript")
+		http.ServeFile(w, r, "client/extlib/crypto-js.min.js")
+	})
+
 	// Public pairing WebSocket (no authentication required)
 	mux.Handle("/ws/handshake", websocket.Handler(HandlePairingWebSocket(sessionManager)))
+
+	// Secure post-pair WebSocket: token-authenticated, HMAC-protected
+	socket.SetSecureTokenValidator(func(token string) ([]byte, bool) {
+		// Token format expected by current code: TOKEN_{sessionID}_{ts}.<base64 HMAC>
+		// Validate via existing session manager and, if valid, return the session's shared secret as MAC key
+		if !sessionManager.ValidateToken(token) { // will also check session state
+			return nil, false
+		}
+		// Extract sessionID to retrieve the key
+		parts := strings.Split(token, "_")
+		if len(parts) < 3 {
+			return nil, false
+		}
+		sessionID := parts[1]
+		if sess, ok := sessionManager.GetSession(sessionID); ok && sess != nil && len(sess.SharedSecret) > 0 {
+			return sess.SharedSecret, true
+		}
+		return nil, false
+	})
+	mux.Handle("/ws/secure", websocket.Handler(socket.ServeSecure))
+
+	// Public session info endpoint for QR code generation
+	mux.HandleFunc("/api/session/", func(w http.ResponseWriter, r *http.Request) {
+		// Extract session ID from URL path
+		path := strings.TrimPrefix(r.URL.Path, "/api/session/")
+		sessionId := strings.TrimSuffix(path, "/info")
+		if sessionId == "" {
+			http.Error(w, "Session ID required", http.StatusBadRequest)
+			return
+		}
+
+		sessionInfo, exists := sessionManager.GetSessionInfo(sessionId)
+		if !exists {
+			http.Error(w, "Session not found", http.StatusNotFound)
+			return
+		}
+
+		// Marshal session info to JSON
+		jsonData, err := json.Marshal(sessionInfo)
+		if err != nil {
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(jsonData)
+	})
 
 	// Disconnect endpoint for paired clients
 	mux.HandleFunc("/disconnect", func(w http.ResponseWriter, r *http.Request) {
@@ -331,15 +389,20 @@ func ServeHTTPandIO(handlers []Handler) {
 	mux.Handle("/common/", PairingAwareMiddleware(sessionManager)(http.HandlerFunc(fileServe)))
 	mux.Handle("/dashboard/", auth.AuthMiddleware(http.HandlerFunc(fileServe)))
 
-	// WebSocket (protected)
-	mux.Handle("/ws/", auth.AuthMiddleware(websocket.Handler(socket.Serve)))
+	// Legacy WebSocket removed: all realtime messaging must use /ws/secure with pairing token
 
 	url := ""
 	port = ":80"
+
 	if !config.Remote() {
 		// If all hosting is localhost, then bind to local access only; also firewall doesn't need to give permission
 		url = "127.0.0.1"
 	}
+
+	// Apply CORS middleware to all requests
+	handler := corsMiddleware(mux)
+
+	// Start HTTP server
 	listen, err = net.Listen("tcp", url+port)
 	if err != nil {
 		port = ":8080"
@@ -350,9 +413,6 @@ func ServeHTTPandIO(handlers []Handler) {
 		}
 	}
 	showStartup(url + port)
-
-	// Apply CORS middleware to all requests
-	handler := corsMiddleware(mux)
 
 	err = http.Serve(listen, handler)
 	if err != nil && listen != nil {
