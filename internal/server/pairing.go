@@ -280,6 +280,17 @@ func (sm *SessionManager) GetSession(sessionID string) (*PairingSession, bool) {
 	return session, exists
 }
 
+// GetSessionByToken performs a light parse to locate the session without verifying the HMAC.
+// Callers should validate tokens separately before trusting the result.
+func (sm *SessionManager) GetSessionByToken(token string) (*PairingSession, bool) {
+	parts := strings.Split(token, "_")
+	if len(parts) < 3 {
+		return nil, false
+	}
+	sessionID := parts[1]
+	return sm.GetSession(sessionID)
+}
+
 // GetSessionInfo returns session information for QR code generation
 func (sm *SessionManager) GetSessionInfo(sessionID string) (map[string]interface{}, bool) {
 	sm.mu.RLock()

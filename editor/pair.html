@@ -255,6 +255,10 @@
                 
                 // Convert to 32-byte array (x-coordinate only)
                 sharedSecret = new Uint8Array(sharedPoint.toArray('be', 32));
+
+                // Persist for this browser session so the runtime can protect WebSocket messages
+                const b64 = btoa(String.fromCharCode.apply(null, sharedSecret));
+                try { sessionStorage.setItem('quando-ws-key', b64); } catch(e) { console.warn('Unable to store WS key:', e); }
                 
                 console.log('Derived shared secret using P-256 ECDH with elliptic.js');
                 return true;

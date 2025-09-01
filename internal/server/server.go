@@ -271,6 +271,26 @@ func ServeHTTPandIO(handlers []Handler) {
 	// Public pairing WebSocket (no authentication required)
 	mux.Handle("/ws/handshake", websocket.Handler(HandlePairingWebSocket(sessionManager)))
 
+	// Secure post-pair WebSocket: token-authenticated, HMAC-protected
+	socket.SetSecureTokenValidator(func(token string) ([]byte, bool) {
+		// Token format expected by current code: TOKEN_{sessionID}_{ts}.<base64 HMAC>
+		// Validate via existing session manager and, if valid, return the session's shared secret as MAC key
+		if !sessionManager.ValidateToken(token) { // will also check session state
+			return nil, false
+		}
+		// Extract sessionID to retrieve the key
+		parts := strings.Split(token, "_")
+		if len(parts) < 3 {
+			return nil, false
+		}
+		sessionID := parts[1]
+		if sess, ok := sessionManager.GetSession(sessionID); ok && sess != nil && len(sess.SharedSecret) > 0 {
+			return sess.SharedSecret, true
+		}
+		return nil, false
+	})
+	mux.Handle("/ws/secure", websocket.Handler(socket.ServeSecure))
+
 	// Public session info endpoint for QR code generation
 	mux.HandleFunc("/api/session/", func(w http.ResponseWriter, r *http.Request) {
 		// Extract session ID from URL path
@@ -369,8 +389,7 @@ func ServeHTTPandIO(handlers []Handler) {
 	mux.Handle("/common/", PairingAwareMiddleware(sessionManager)(http.HandlerFunc(fileServe)))
 	mux.Handle("/dashboard/", auth.AuthMiddleware(http.HandlerFunc(fileServe)))
 
-	// WebSocket (protected)
-	mux.Handle("/ws/", auth.AuthMiddleware(websocket.Handler(socket.Serve)))
+	// Legacy WebSocket removed: all realtime messaging must use /ws/secure with pairing token
 
 	url := ""
 	port = ":80"
