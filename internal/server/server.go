@@ -1,15 +1,8 @@
 package server
 
 import (
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/tls"
-	"crypto/x509"
-	"crypto/x509/pkix"
 	"encoding/json"
-	"encoding/pem"
 	"fmt"
-	"math/big"
 	"net"
 	"net/http"
 	"net/url"
@@ -22,7 +15,6 @@ import (
 	"quando/internal/server/socket"
 	"strconv"
 	"strings"
-	"time"
 
 	"golang.org/x/net/websocket"
 )
@@ -37,59 +29,6 @@ type Handler struct {
 
 func Port() string {
 	return port
-}
-
-// generateSelfSignedCert creates a self-signed certificate for HTTPS
-func generateSelfSignedCert() (tls.Certificate, error) {
-	// Generate a private key
-	priv, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		return tls.Certificate{}, err
-	}
-
-	// Create certificate template
-	template := x509.Certificate{
-		SerialNumber: big.NewInt(1),
-		Subject: pkix.Name{
-			Organization:  []string{"Quando Development"},
-			Country:       []string{"US"},
-			Province:      []string{""},
-			Locality:      []string{""},
-			StreetAddress: []string{""},
-			PostalCode:    []string{""},
-		},
-		NotBefore:   time.Now(),
-		NotAfter:    time.Now().Add(365 * 24 * time.Hour), // Valid for 1 year
-		KeyUsage:    x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
-		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		IPAddresses: []net.IP{net.IPv4(127, 0, 0, 1), net.IPv4(0, 0, 0, 0)},
-		DNSNames:    []string{"localhost"},
-	}
-
-	// Add the current IP address to the certificate
-	if currentIP := ip.PrivateIP(); currentIP != "" {
-		if parsedIP := net.ParseIP(currentIP); parsedIP != nil {
-			template.IPAddresses = append(template.IPAddresses, parsedIP)
-		}
-	}
-
-	// Create the certificate
-	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, &priv.PublicKey, priv)
-	if err != nil {
-		return tls.Certificate{}, err
-	}
-
-	// Encode certificate and key to PEM format
-	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
-	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(priv)})
-
-	// Create TLS certificate
-	cert, err := tls.X509KeyPair(certPEM, keyPEM)
-	if err != nil {
-		return tls.Certificate{}, err
-	}
-
-	return cert, nil
 }
 
 // isAllowedLocalOrigin validates if an origin is from a trusted local source
@@ -319,6 +258,16 @@ func ServeHTTPandIO(handlers []Handler) {
 		http.ServeFile(w, r, "editor/js/qrcode.min.js")
 	})
 
+	// Public crypto libraries for pairing pages (no authentication required)
+	mux.HandleFunc("/client/extlib/elliptic.min.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/javascript")
+		http.ServeFile(w, r, "client/extlib/elliptic.min.js")
+	})
+	mux.HandleFunc("/client/extlib/crypto-js.min.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/javascript")
+		http.ServeFile(w, r, "client/extlib/crypto-js.min.js")
+	})
+
 	// Public pairing WebSocket (no authentication required)
 	mux.Handle("/ws/handshake", websocket.Handler(HandlePairingWebSocket(sessionManager)))
 
@@ -425,67 +374,29 @@ func ServeHTTPandIO(handlers []Handler) {
 
 	url := ""
 	port = ":80"
-	httpsPort := ":8443"        // Use 8443 instead of 443 to avoid needing root privileges
-	useHTTPS := config.Remote() // Use HTTPS when in remote mode
 
 	if !config.Remote() {
 		// If all hosting is localhost, then bind to local access only; also firewall doesn't need to give permission
 		url = "127.0.0.1"
-		useHTTPS = false // No need for HTTPS on localhost
 	}
 
 	// Apply CORS middleware to all requests
 	handler := corsMiddleware(mux)
 
-	if useHTTPS {
-		// Generate self-signed certificate for HTTPS
-		cert, err := generateSelfSignedCert()
-		if err != nil {
-			fmt.Printf("Failed to generate certificate: %v\n", err)
-			fmt.Println("Falling back to HTTP mode")
-			useHTTPS = false
-		} else {
-			// Configure TLS
-			tlsConfig := &tls.Config{
-				Certificates: []tls.Certificate{cert},
-			}
-
-			// Try to start HTTPS server
-			server := &http.Server{
-				Addr:      url + httpsPort,
-				Handler:   handler,
-				TLSConfig: tlsConfig,
-			}
-
-			fmt.Printf("Starting HTTPS server on %s%s\n", url, httpsPort)
-			fmt.Println("🔒 HTTPS enabled for WebCrypto compatibility")
-			fmt.Println("⚠️  You'll need to accept the self-signed certificate in your browser")
-			fmt.Printf("🌐 Access via: https://%s%s\n", ip.PrivateIP(), httpsPort)
-
-			if err := server.ListenAndServeTLS("", ""); err != nil {
-				fmt.Printf("HTTPS server failed: %v\n", err)
-				fmt.Println("Falling back to HTTP on port 8080...")
-				useHTTPS = false
-			}
-		}
-	}
-
-	if !useHTTPS {
-		// Fallback to HTTP
+	// Start HTTP server
+	listen, err = net.Listen("tcp", url+port)
+	if err != nil {
+		port = ":8080"
 		listen, err = net.Listen("tcp", url+port)
 		if err != nil {
-			port = ":8080"
-			listen, err = net.Listen("tcp", url+port)
-			if err != nil {
-				fmt.Println("Failed to start server - port 80 and 8080 may already be in use - exiting...\n", err)
-				return
-			}
+			fmt.Println("Failed to start server - port 80 and 8080 may already be in use - exiting...\n", err)
+			return
 		}
-		showStartup(url + port)
+	}
+	showStartup(url + port)
 
-		err = http.Serve(listen, handler)
-		if err != nil && listen != nil {
-			fmt.Println("Exiting... ", err)
-		}
+	err = http.Serve(listen, handler)
+	if err != nil && listen != nil {
+		fmt.Println("Exiting... ", err)
 	}
 }

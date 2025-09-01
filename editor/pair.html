@@ -4,6 +4,10 @@
     <title>Quando - Pair Device</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    
+    <!-- Pure JS crypto libraries (no secure context required) -->
+    <script src="/client/extlib/elliptic.min.js"></script>
+    <script src="/client/extlib/crypto-js.min.js"></script>
     <style>
         body { 
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
@@ -212,25 +216,23 @@
             }
         }
         
-        // Crypto utility functions using WebCrypto API with P-256 (universally supported)
-        async function generateP256KeyPair() {
+        // Crypto utility functions using pure JS libraries (works without secure context)
+        function generateP256KeyPair() {
             try {
-                const keyPair = await window.crypto.subtle.generateKey(
-                    {
-                        name: "ECDH",
-                        namedCurve: "P-256"
-                    },
-                    true,
-                    ["deriveKey", "deriveBits"]
-                );
+                // Use elliptic.js P-256 curve
+                const EC = elliptic.ec;
+                const ec = new EC('p256');
                 
-                clientPrivateKey = keyPair.privateKey;
+                // Generate key pair
+                const keyPair = ec.genKeyPair();
                 
-                // Export public key as raw bytes
-                const publicKeyBytes = await window.crypto.subtle.exportKey("raw", keyPair.publicKey);
-                clientPublicKey = new Uint8Array(publicKeyBytes);
+                // Store private key
+                clientPrivateKey = keyPair;
                 
-                console.log('Generated client P-256 ECDH key pair');
+                // Get public key as uncompressed bytes (65 bytes: 0x04 + 32-byte x + 32-byte y)
+                clientPublicKey = new Uint8Array(keyPair.getPublic().encode('array', false));
+                
+                console.log('Generated client P-256 ECDH key pair using elliptic.js');
                 return true;
             } catch (error) {
                 console.error('Failed to generate P-256 ECDH key pair:', error);
@@ -238,33 +240,23 @@
             }
         }
         
-        async function deriveSharedSecret() {
+        function deriveSharedSecret() {
             try {
-                // Import server public key
+                // Decode server public key from base64
                 const serverKeyBytes = Uint8Array.from(atob(serverPublicKey), c => c.charCodeAt(0));
-                const serverKey = await window.crypto.subtle.importKey(
-                    "raw",
-                    serverKeyBytes,
-                    {
-                        name: "ECDH",
-                        namedCurve: "P-256"
-                    },
-                    false,
-                    []
-                );
                 
-                // Derive shared secret
-                const sharedSecretBits = await window.crypto.subtle.deriveBits(
-                    {
-                        name: "ECDH",
-                        public: serverKey
-                    },
-                    clientPrivateKey,
-                    256 // 32 bytes
-                );
+                // Parse server public key using elliptic.js
+                const EC = elliptic.ec;
+                const ec = new EC('p256');
+                const serverKeyPoint = ec.keyFromPublic(Array.from(serverKeyBytes)).getPublic();
                 
-                sharedSecret = new Uint8Array(sharedSecretBits);
-                console.log('Derived shared secret using P-256 ECDH');
+                // Perform ECDH
+                const sharedPoint = clientPrivateKey.derive(serverKeyPoint);
+                
+                // Convert to 32-byte array (x-coordinate only)
+                sharedSecret = new Uint8Array(sharedPoint.toArray('be', 32));
+                
+                console.log('Derived shared secret using P-256 ECDH with elliptic.js');
                 return true;
             } catch (error) {
                 console.error('Failed to derive shared secret:', error);
@@ -272,24 +264,24 @@
             }
         }
         
-        async function deriveCryptoSAS() {
+        function deriveCryptoSAS() {
             try {
-                // Import shared secret as HMAC key
-                const hmacKey = await window.crypto.subtle.importKey(
-                    "raw",
-                    sharedSecret,
-                    {
-                        name: "HMAC",
-                        hash: "SHA-256"
-                    },
-                    false,
-                    ["sign"]
-                );
+                // Convert shared secret to CryptoJS WordArray
+                const sharedSecretWords = CryptoJS.lib.WordArray.create(sharedSecret);
                 
                 // Derive SAS using HMAC-SHA256
-                const sasDerivationData = new TextEncoder().encode("SAS_DERIVATION");
-                const hmacResult = await window.crypto.subtle.sign("HMAC", hmacKey, sasDerivationData);
-                const hmacBytes = new Uint8Array(hmacResult);
+                const sasDerivationData = CryptoJS.enc.Utf8.parse("SAS_DERIVATION");
+                const hmacResult = CryptoJS.HmacSHA256(sasDerivationData, sharedSecretWords);
+                
+                // Convert to bytes array
+                const hmacBytes = [];
+                for (let i = 0; i < hmacResult.words.length; i++) {
+                    const word = hmacResult.words[i];
+                    hmacBytes.push((word >>> 24) & 0xff);
+                    hmacBytes.push((word >>> 16) & 0xff);
+                    hmacBytes.push((word >>> 8) & 0xff);
+                    hmacBytes.push(word & 0xff);
+                }
                 
                 // Convert first 4 bytes to uint32 (same as server)
                 const sasValue32 = (hmacBytes[0] << 24) | (hmacBytes[1] << 16) | (hmacBytes[2] << 8) | hmacBytes[3];
@@ -298,7 +290,7 @@
                 const sasNumber = (sasValue % 900000) + 100000; // Map to 100000-999999
                 derivedSAS = sasNumber.toString().padStart(6, '0');
                 
-                console.log('Derived cryptographic SAS:', derivedSAS);
+                console.log('Derived cryptographic SAS using pure JS crypto:', derivedSAS);
                 return true;
             } catch (error) {
                 console.error('Failed to derive cryptographic SAS:', error);
@@ -433,57 +425,30 @@
                     return;
                 }
                 
-                // Check for WebCrypto API support with detailed logging
-                console.log('WebCrypto detection:');
-                console.log('window.crypto exists:', !!window.crypto);
-                console.log('window.crypto.subtle exists:', !!(window.crypto && window.crypto.subtle));
-                console.log('isSecureContext:', window.isSecureContext);
-                console.log('location.protocol:', window.location.protocol);
-                console.log('User agent:', navigator.userAgent);
+                // Check for pure JS crypto library support
+                console.log('Pure JS crypto libraries loading...');
+                console.log('elliptic.js available:', typeof elliptic !== 'undefined');
+                console.log('CryptoJS available:', typeof CryptoJS !== 'undefined');
                 
-                // Check for secure context first
-                if (!window.isSecureContext && window.location.protocol !== 'https:' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-                    showError('WebCrypto requires a secure context (HTTPS) for remote access. Please access this page via HTTPS.');
+                if (typeof elliptic === 'undefined') {
+                    showError('Elliptic.js library not loaded. Please refresh the page.');
                     loadingDiv.style.display = 'none';
                     initView.style.display = 'block';
                     return;
                 }
                 
-                if (!window.crypto) {
-                    showError('WebCrypto API not available: window.crypto is missing. This should not happen on modern browsers.');
+                if (typeof CryptoJS === 'undefined') {
+                    showError('CryptoJS library not loaded. Please refresh the page.');
                     loadingDiv.style.display = 'none';
                     initView.style.display = 'block';
                     return;
                 }
                 
-                if (!window.crypto.subtle) {
-                    showError('WebCrypto SubtleCrypto not available: window.crypto.subtle is missing. This may be due to an insecure context (non-HTTPS).');
-                    loadingDiv.style.display = 'none';
-                    initView.style.display = 'block';
-                    return;
-                }
-                
-                console.log('WebCrypto API is available, testing P-256 support...');
-                
-                // Test P-256 support specifically
-                try {
-                    const testKey = await window.crypto.subtle.generateKey(
-                        { name: "ECDH", namedCurve: "P-256" },
-                        false,
-                        ["deriveKey", "deriveBits"]
-                    );
-                    console.log('P-256 ECDH support confirmed:', testKey);
-                } catch (testError) {
-                    console.error('P-256 test failed:', testError);
-                    showError(`Your browser does not support P-256 ECDH: ${testError.message}. Please update your browser or try a different one.`);
-                    loadingDiv.style.display = 'none';
-                    initView.style.display = 'block';
-                    return;
-                }
+                console.log('Pure JS crypto libraries ready');
                 
                 // Generate client key pair for cryptographic pairing
                 updateStatus('Generating cryptographic keys...');
-                if (!(await generateP256KeyPair())) {
+                if (!generateP256KeyPair()) {
                     showError('Failed to generate cryptographic keys');
                     loadingDiv.style.display = 'none';
                     initView.style.display = 'block';
@@ -501,14 +466,14 @@
                 
                 // Derive shared secret and SAS
                 updateStatus('Deriving shared secret...');
-                if (!(await deriveSharedSecret())) {
+                if (!deriveSharedSecret()) {
                     showError('Failed to derive shared secret');
                     loadingDiv.style.display = 'none';
                     initView.style.display = 'block';
                     return;
                 }
                 
-                if (!(await deriveCryptoSAS())) {
+                if (!deriveCryptoSAS()) {
                     showError('Failed to derive security code');
                     loadingDiv.style.display = 'none';
                     initView.style.display = 'block';
