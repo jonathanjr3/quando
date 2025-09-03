@@ -55,6 +55,19 @@
             font-family: 'Courier New', monospace;
             clear: both;
         }
+
+        .qr-url {
+            background: rgba(255,255,255,0.95);
+            color: #333;
+            padding: 10px 12px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            word-break: break-all;
+            display: inline-block;
+            margin-top: 10px;
+            user-select: all;
+        }
         
         .status {
             font-size: 1.1em;
@@ -93,6 +106,7 @@
         <div id="qr-container">
             <div id="qrcode"></div>
         </div>
+    <div id="qr-url" class="qr-url" title="Join URL"></div>
         
         <div id="sas-container">Waiting for secure connection...</div>
         <div class="status" id="status">Ready for secure pairing</div>
@@ -214,6 +228,8 @@
                 // Generate QR code with URL (not JSON)
                 const joinUrl = `${window.location.protocol}//${host}/pair/${sessionId}`;
                 console.log('Generating QR code for URL:', joinUrl);
+                const qrUrlEl = document.getElementById('qr-url');
+                if (qrUrlEl) { qrUrlEl.textContent = joinUrl; }
                 
                 const qr = new QRCode(qrContainer, {
                     text: joinUrl,
@@ -265,12 +281,16 @@
                             statusElement.textContent = 'Device successfully connected with cryptographic security';
                             // Hide QR code when device is paired
                             qrContainerWrapper.style.display = 'none';
+                            const urlEl1 = document.getElementById('qr-url');
+                            if (urlEl1) { urlEl1.style.display = 'none'; }
                             break;
                         case 'client_disconnected':
                             sasContainer.textContent = "� Ready for secure pairing";
                             statusElement.textContent = 'Device disconnected - ready for new secure connection';
                             // Show QR code again when device disconnects
                             qrContainerWrapper.style.display = 'inline-block';
+                            const urlEl2 = document.getElementById('qr-url');
+                            if (urlEl2) { urlEl2.style.display = 'inline-block'; }
                             // Don't need to restart - same session can be reused
                             break;
                         case 'session_invalidated':
@@ -278,6 +298,8 @@
                             statusElement.textContent = 'Session invalidated - creating new secure pairing session';
                             // Show QR code for new session
                             qrContainerWrapper.style.display = 'inline-block';
+                            const urlEl3 = document.getElementById('qr-url');
+                            if (urlEl3) { urlEl3.style.display = 'inline-block'; }
                             // Generate new session and restart
                             setTimeout(() => {
                                 restartPairing();
