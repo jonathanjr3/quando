@@ -34,80 +34,44 @@ if (port != '') {
 }
 
 function _connectWebSocket() {
-  // Prefer secure application-layer channel if we have token AND key
-  keyB64 = sessionStorage.getItem('quando-ws-key')
-  if (token && keyB64) {
-    // decode key once
+  // Secure WebSocket is mandatory: require token + shared key
+  keyB64 = sessionStorage.getItem('quando-ws-key') || localStorage.getItem('quando-ws-key')
+  token = localStorage.getItem('quando-session-token')
+  if (!(token && keyB64)) { setTimeout(_connectWebSocket, 1000); return }
+  if (!encKey || !macKey) {
     try {
       const raw = atob(keyB64)
       const ikm = new Uint8Array(raw.length)
       for (let i=0;i<raw.length;i++) ikm[i] = raw.charCodeAt(i)
-      // Derive enc/mac keys via HKDF-SHA256 with sessionId salt
       const sessionId = (token.split('_')[1] || '')
       const out = hkdfExpand(ikm, utf8ToBytes(sessionId), utf8ToBytes('quando-ws-aead-v1'), 64)
       encKey = out.slice(0,32)
       macKey = out.slice(32,64)
-    } catch(e) {
-      console.warn('Failed to decode quando-ws-key, falling back to legacy WS')
-    }
-
-    let wss = new WebSocket(io_protocol + '://' + window.location.hostname + port + "/ws/secure")
-
-    wss.onopen = () => {
-      // authenticate connection
-      wss.send(JSON.stringify({type:'auth', token}))
-    }
-    wss.onmessage = (e) => {
-      try {
-        const env = JSON.parse(e.data)
-        if (env && env.type === 'secure' && env.nonce && env.ct && env.tag) {
-          if (encKey && macKey) {
-            const iv = b64ToBytes(env.nonce)
-            const ct = b64ToBytes(env.ct)
-            const expected = hmacBase64(macKey, bytesToConcat(iv, ct))
-            if (expected !== env.tag) { console.warn('bad tag'); return }
-            const pt = aesCtrXor(encKey, iv, ct)
-            _handleWebSocketmessage({data: new TextDecoder().decode(pt)})
-            secureKeyed = true
-            socket = wss
-            return
-          } else {
-            console.warn('Secure WS: bad MAC, dropped')
-            return
-          }
-        }
-      } catch (err) {
-        // fallthrough to legacy parsing
+    } catch(e) { console.warn('secure ws: key derivation failed, retrying'); setTimeout(_connectWebSocket, 1000); return }
+  }
+  const wss = new WebSocket(io_protocol + '://' + window.location.hostname + port + "/ws/secure")
+  wss.onopen = () => { wss.send(JSON.stringify({type:'auth', token})) }
+  wss.onmessage = (e) => {
+    try {
+      const env = JSON.parse(e.data)
+      if (env && env.type === 'secure' && env.nonce && env.ct && env.tag) {
+        if (!(encKey && macKey)) { return }
+        const iv = b64ToBytes(env.nonce)
+        const ct = b64ToBytes(env.ct)
+        const expected = hmacBase64(macKey, bytesToConcat(iv, ct))
+        if (expected !== env.tag) { console.warn('secure ws: bad tag'); return }
+        const pt = aesCtrXor(encKey, iv, ct)
+        _handleWebSocketmessage({data: new TextDecoder().decode(pt)})
+        secureKeyed = true
+        socket = wss
+        return
       }
-      _handleWebSocketmessage(e)
-    }
-    wss.onclose = () => {
-      console.log("secure ws closed, fallback to legacy and retry")
-      secureKeyed = false
-      socket = false
-      setTimeout(_connectWebSocket, 1000)
-    }
-    wss.onerror = () => {
-      try { wss.close() } catch {}
-    }
-    socket = wss
-    return
+    } catch (err) { /* plaintext or auth messages */ }
+    _handleWebSocketmessage(e)
   }
-
-  // Legacy unprotected websocket as fallback
-  let ws = new WebSocket(io_protocol + '://' + window.location.hostname + port + "/ws/")
-
-  ws.onclose = (e) => {
-    console.log("reconnecting")
-    socket = false
-    setTimeout(_connectWebSocket, 1000)
-  }
-  ws.onerror = (e) => {
-    console.log("error:"+e)
-    ws.close(e)
-  }
-  ws.onmessage = _handleWebSocketmessage
-  socket = ws
+  wss.onclose = () => { secureKeyed = false; socket = false; setTimeout(_connectWebSocket, 1500) }
+  wss.onerror = () => { try { wss.close() } catch {} }
+  socket = wss
 }
 _connectWebSocket()
 
